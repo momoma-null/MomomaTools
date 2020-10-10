@@ -4,7 +4,6 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace MomomaAssets
 {
@@ -12,95 +11,94 @@ namespace MomomaAssets
 public class MeshRendererElement
 {
     public GameObject gameObject { get; private set; }
-	public string name { get; private set; }
-	private bool lightmapStatic;
-	public bool LightmapStatic
-	{ 
-		get{ return lightmapStatic;}
-		set
-		{
-			lightmapStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.LightmapStatic);
-		}
-	}
+    private bool lightmapStatic;
+    public bool LightmapStatic
+    {
+        get{ return lightmapStatic;}
+        set
+        {
+            lightmapStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.LightmapStatic);
+        }
+    }
     private bool occluderStatic;
-	public bool OccluderStatic
-	{ 
-		get{ return occluderStatic;}
-		set
-		{
-			occluderStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.OccluderStatic);
-		}
-	}
+    public bool OccluderStatic
+    {
+        get{ return occluderStatic;}
+        set
+        {
+            occluderStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.OccluderStatic);
+        }
+    }
     private bool occludeeStatic;
-	public bool OccludeeStatic
-	{ 
-		get{ return occludeeStatic;}
-		set
-		{
-			occludeeStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.OccludeeStatic);
-		}
-	}
+    public bool OccludeeStatic
+    {
+        get{ return occludeeStatic;}
+        set
+        {
+            occludeeStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.OccludeeStatic);
+        }
+    }
     private bool batchingStatic;
-	public bool BatchingStatic
-	{ 
-		get{ return batchingStatic;}
-		set
-		{
-			batchingStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.BatchingStatic);
-		}
-	}
+    public bool BatchingStatic
+    {
+        get{ return batchingStatic;}
+        set
+        {
+            batchingStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.BatchingStatic);
+        }
+    }
     private bool navigationStatic;
-	public bool NavigationStatic
-	{ 
-		get{ return navigationStatic;}
-		set
-		{
-			navigationStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.NavigationStatic);
-		}
-	}
+    public bool NavigationStatic
+    {
+        get{ return navigationStatic;}
+        set
+        {
+            navigationStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.NavigationStatic);
+        }
+    }
     private bool offMeshLinkGeneration;
-	public bool OffMeshLinkGeneration
-	{ 
-		get{ return offMeshLinkGeneration;}
-		set
-		{
-			offMeshLinkGeneration = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.OffMeshLinkGeneration);
-		}
-	}
+    public bool OffMeshLinkGeneration
+    {
+        get{ return offMeshLinkGeneration;}
+        set
+        {
+            offMeshLinkGeneration = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.OffMeshLinkGeneration);
+        }
+    }
     private bool reflectionProbeStatic;
-	public bool ReflectionProbeStatic
-	{ 
-		get{ return reflectionProbeStatic;}
-		set
-		{
-			reflectionProbeStatic = value;
-			SetStaticFlag(value, (int)StaticEditorFlags.ReflectionProbeStatic);
-		}
-	}
-	public SerializedObject soGO { get; private set; } 
-	public SerializedProperty m_StaticEditorFlags;
-	public SerializedObject soMR { get; private set; }
-	public SerializedProperty m_LightProbeUsage { get; private set; }
-	public SerializedProperty m_ReflectionProbeUsage { get; private set; }
-	public SerializedProperty m_ProbeAnchor { get; private set; }
-	public SerializedProperty m_CastShadows { get; private set; }
-	public SerializedProperty m_ReceiveShadows { get; private set; }
-	public SerializedProperty m_ScaleInLightmap { get; private set; }
-	public SerializedProperty m_ImportantGI { get; private set; }
-	public SerializedProperty m_StitchLightmapSeams { get; private set; }
-	public SerializedProperty m_LightmapParameters { get; private set; }
+    public bool ReflectionProbeStatic
+    {
+        get{ return reflectionProbeStatic;}
+        set
+        {
+            reflectionProbeStatic = value;
+            SetStaticFlag(value, (int)StaticEditorFlags.ReflectionProbeStatic);
+        }
+    }
+    public SerializedObject soGO { get; private set; }
+    public SerializedProperty m_StaticEditorFlags;
+    public SerializedObject soMR { get; private set; }
+    public SerializedProperty m_LightProbeUsage { get; private set; }
+    public SerializedProperty m_ReflectionProbeUsage { get; private set; }
+    public SerializedProperty m_ProbeAnchor { get; private set; }
+    public SerializedProperty m_CastShadows { get; private set; }
+    public SerializedProperty m_ReceiveShadows { get; private set; }
+    public SerializedProperty m_ScaleInLightmap { get; private set; }
+    public SerializedProperty m_ImportantGI { get; private set; }
+    public SerializedProperty m_StitchLightmapSeams { get; private set; }
+    public SerializedProperty m_LightmapParameters { get; private set; }
 
-	private void SetStaticFlag(bool active, int targetFlag)
-	{
-		if (!gameObject) return;
-		int flags = m_StaticEditorFlags.intValue;
-		if (flags < 0)
+    private void SetStaticFlag(bool active, int targetFlag)
+    {
+        if (!gameObject) return;
+        int flags = m_StaticEditorFlags.intValue;
+        if (flags < 0)
         {
             int allPossibleValues = 0;
             var values = Enum.GetValues(typeof(StaticEditorFlags));
@@ -110,40 +108,39 @@ public class MeshRendererElement
             }
             flags = flags & allPossibleValues;
         }
-		if (active)
-		{
-			flags = flags | targetFlag;
-		}else
-		{
-			flags = flags & ~targetFlag;
-		}
-		m_StaticEditorFlags.intValue = flags;
-	}
-	public MeshRendererElement(MeshRenderer mr)
+        if (active)
+        {
+            flags = flags | targetFlag;
+        }else
+        {
+            flags = flags & ~targetFlag;
+        }
+        m_StaticEditorFlags.intValue = flags;
+    }
+    public MeshRendererElement(MeshRenderer mr)
     {
-        name = mr.name;
-		gameObject = mr.gameObject;
-		soGO = new SerializedObject(gameObject);
-		soGO.Update();
-		m_StaticEditorFlags = soGO.FindProperty("m_StaticEditorFlags");
-		int flag = m_StaticEditorFlags.intValue;
-		lightmapStatic = 0 < (flag & (int)StaticEditorFlags.LightmapStatic);
+        gameObject = mr.gameObject;
+        soGO = new SerializedObject(gameObject);
+        soGO.Update();
+        m_StaticEditorFlags = soGO.FindProperty("m_StaticEditorFlags");
+        int flag = m_StaticEditorFlags.intValue;
+        lightmapStatic = 0 < (flag & (int)StaticEditorFlags.LightmapStatic);
         occluderStatic = 0 < (flag & (int)StaticEditorFlags.OccluderStatic);
         occludeeStatic = 0 < (flag & (int)StaticEditorFlags.OccludeeStatic);
         batchingStatic = 0 < (flag & (int)StaticEditorFlags.BatchingStatic);
         navigationStatic = 0 < (flag & (int)StaticEditorFlags.NavigationStatic);
         offMeshLinkGeneration = 0 < (flag & (int)StaticEditorFlags.OffMeshLinkGeneration);
         reflectionProbeStatic = 0 < (flag & (int)StaticEditorFlags.ReflectionProbeStatic);
-		soMR = new SerializedObject(mr);
-		soMR.Update();
-		m_LightProbeUsage = soMR.FindProperty("m_LightProbeUsage");
-		m_ReflectionProbeUsage = soMR.FindProperty("m_ReflectionProbeUsage");
-		m_ProbeAnchor = soMR.FindProperty("m_ProbeAnchor");
-		m_CastShadows = soMR.FindProperty("m_CastShadows");
-		m_ReceiveShadows = soMR.FindProperty("m_ReceiveShadows");
-		m_ScaleInLightmap = soMR.FindProperty("m_ScaleInLightmap");
-		m_ImportantGI = soMR.FindProperty("m_ImportantGI");
-		m_StitchLightmapSeams = soMR.FindProperty("m_StitchLightmapSeams");
+        soMR = new SerializedObject(mr);
+        soMR.Update();
+        m_LightProbeUsage = soMR.FindProperty("m_LightProbeUsage");
+        m_ReflectionProbeUsage = soMR.FindProperty("m_ReflectionProbeUsage");
+        m_ProbeAnchor = soMR.FindProperty("m_ProbeAnchor");
+        m_CastShadows = soMR.FindProperty("m_CastShadows");
+        m_ReceiveShadows = soMR.FindProperty("m_ReceiveShadows");
+        m_ScaleInLightmap = soMR.FindProperty("m_ScaleInLightmap");
+        m_ImportantGI = soMR.FindProperty("m_ImportantGI");
+        m_StitchLightmapSeams = soMR.FindProperty("m_StitchLightmapSeams");
     }
 }
 
@@ -154,318 +151,265 @@ public class MeshRendererTableItem : TreeViewItem
     public MeshRendererTableItem(int id, MeshRenderer mr) : base(id)
     {
         element = new MeshRendererElement(mr);
+        displayName = mr.name;
     }
 }
 
 public class MeshRendererTableHeader : MultiColumnHeader
 {
-	private List<MultiColumnHeaderState.Column> columns;
+    private List<MultiColumnHeaderState.Column> columns;
 
     public MeshRendererTableHeader(MultiColumnHeaderState state) : base(state)
     {
         columns = new List<MultiColumnHeaderState.Column>();
     }
 
-	public void AddtoList(string name, float width, Func<MeshRendererTableItem, SerializedProperty> GetProperty)
-	{
-		var column = new MeshRendererColumn
-		{
-			width = width,
-    	    headerContent = new GUIContent(name),
-			GetProperty = GetProperty
-		};
-		columns.Add(column);
-	}
+    public void AddtoList(string name, float width, Func<MeshRendererTableItem, SerializedProperty> GetProperty)
+    {
+        var column = new MeshRendererColumn
+        {
+            width = width,
+            headerContent = new GUIContent(name),
+            GetProperty = GetProperty
+        };
+        columns.Add(column);
+    }
 
-	public void AddtoList(string name, float width, Func<MeshRendererTableItem, object> GetValue, Action<MeshRendererTableItem, object> SetValue = null, Func<MeshRendererTableItem, SerializedProperty> GetProperty = null)
-	{
-		var column = new MeshRendererColumn
-		{
-			width = width,
-    	    headerContent = new GUIContent(name),
-			GetValue = GetValue,
-			SetValue = SetValue,
-			GetProperty = GetProperty
-		};
-		columns.Add(column);
-	}
+    public void AddtoList(string name, float width, Func<MeshRendererTableItem, object> GetValue, Action<MeshRendererTableItem, object> SetValue = null, Func<MeshRendererTableItem, SerializedProperty> GetProperty = null)
+    {
+        var column = new MeshRendererColumn
+        {
+            width = width,
+            headerContent = new GUIContent(name),
+            GetValue = GetValue,
+            SetValue = SetValue,
+            GetProperty = GetProperty
+        };
+        columns.Add(column);
+    }
 
-	public void SetList()
-	{
-		state = new MultiColumnHeaderState(columns.ToArray());
-	}
+    public void SetList()
+    {
+        state = new MultiColumnHeaderState(columns.ToArray());
+    }
 }
 
 public class MeshRendererColumn : MultiColumnHeaderState.Column
 {
-	public Func<MeshRendererTableItem, SerializedProperty> GetProperty;
-	public Action<MeshRendererTableItem, object> SetValue;
-	public Func<MeshRendererTableItem, object> GetValue;
+    public Func<MeshRendererTableItem, object> GetValue;
+    public Action<MeshRendererTableItem, object> SetValue;
+    public Func<MeshRendererTableItem, SerializedProperty> GetProperty;
 }
 
 public class MeshRendererTreeView : TreeView
 {
-    public MeshRendererTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, bool lightmapStaticOnly = false, GameObject rootObj = null) : base(state, multiColumnHeader)
+    public MeshRendererTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, Func<IEnumerable<UnityEngine.Object>> GetObjects) : base(state, multiColumnHeader)
     {
-        rowHeight = 16;
         showAlternatingRowBackgrounds = true;
-		multiColumnHeader.sortingChanged += SortItems;
-		multiColumnHeader.visibleColumnsChanged += OnVisibleColumnChanged;
-		multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
-		this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
-		this.lightmapStaticOnly = lightmapStaticOnly;
-        this.m_RootGO = rootObj;
+        showBorder = true;
+        rowHeight = EditorGUIUtility.singleLineHeight;
+        multiColumnHeader.sortingChanged += OnSortingChanged;
+        multiColumnHeader.visibleColumnsChanged += OnVisibleColumnChanged;
+        multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
+        this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
+        this.GetObjects = GetObjects;
 
         multiColumnHeader.ResizeToFit();
         Reload();
     }
 
-	private List<TreeViewItem> m_Items;
-	private List<TreeViewItem> m_SearchedItems;
-	private GameObject m_RootGO;
-	private readonly bool lightmapStaticOnly;
-	private readonly string sortedColumnIndexStateKey;
+    private List<TreeViewItem> m_Items;
+    private readonly Func<IEnumerable<UnityEngine.Object>> GetObjects;
+    private readonly string sortedColumnIndexStateKey;
 
-	public GameObject RootGO
-	{
-		get{ return m_RootGO; }
-		set{ m_RootGO = value; }
-	}
-
-	public void FullReload()
+    public void FullReload()
     {
          m_Items = null;
          Reload();
     }
-	
-	protected override IList<TreeViewItem> BuildRows(TreeViewItem root)
-	{
-		// create Item List
-		if (m_Items == null)
-		{
-			m_Items = new List<TreeViewItem>();
-			
-			var scene = SceneManager.GetActiveScene();
-			if (scene.IsValid())
-			{
-        		var meshRendererArray = new List<MeshRenderer>();
-
-				if (m_RootGO)
-				{
-					if (m_RootGO.activeInHierarchy)
-					{
-						meshRendererArray.AddRange(m_RootGO.GetComponentsInChildren<MeshRenderer>());
-					}
-				}else
-				{
-        			var rootObjs = scene.GetRootGameObjects();
-		
-        			foreach (var rootObj in rootObjs)
-        			{
-            			if(!rootObj.activeInHierarchy) continue;
-						meshRendererArray.AddRange(rootObj.GetComponentsInChildren<MeshRenderer>());
-        			}
-				}
-        
-				foreach (var child in meshRendererArray)
-        		{
-	       			if(lightmapStaticOnly
-					 && 0 == (GameObjectUtility.GetStaticEditorFlags(child.gameObject) & StaticEditorFlags.LightmapStatic)) continue;
-					m_Items.Add(new MeshRendererTableItem(child.gameObject.GetInstanceID(), child));
-        		}
-	        }
-			SortItems(multiColumnHeader);
-		}
-
-		SearchFullTree();
-		Repaint();
-		
-		return m_SearchedItems;
-	}
-
-	private void SearchFullTree()
-	{
-		if (!hasSearch)
-		{
-			m_SearchedItems = m_Items;
-			return;
-		}
-		m_SearchedItems = new List<TreeViewItem>();
-		foreach (var child in m_Items)
-		{
-			if (DoesItemMatchSearch(child, searchString))
-			{
-				m_SearchedItems.Add(child);
-			}
-		}
-	}
 
     protected override TreeViewItem BuildRoot()
     {
         return new TreeViewItem(-1, -1, null);
     }
 
+    protected override IList<TreeViewItem> BuildRows(TreeViewItem root)
+    {
+        if (m_Items == null)
+        {
+            m_Items = new List<TreeViewItem>();
+            if (GetObjects == null)
+                return m_Items;
+            foreach (MeshRenderer mr in GetObjects())
+            {
+                m_Items.Add(new MeshRendererTableItem(mr.gameObject.GetInstanceID(), mr));
+            }
+        }
+        SearchFullTree();
+        Sort(m_Items, multiColumnHeader);
+        Repaint();
+        return m_Items;
+    }
+
+    private void SearchFullTree()
+    {
+        if (hasSearch)
+            m_Items.RemoveAll(item => !DoesItemMatchSearch(item, searchString));
+    }
+
     protected override void RowGUI(RowGUIArgs args)
     {
-        var item = (MeshRendererTableItem) args.item;
-		if (item == null) return;
-		if (!item.element.gameObject) return;
+        var item = (MeshRendererTableItem)args.item;
+        if (!item.element.gameObject)
+            return;
 
         item.element.soGO.Update();
-		item.element.soMR.Update();
-		
-		var labelStyle = args.selected ? EditorStyles.whiteLabel : EditorStyles.label;
+        item.element.soMR.Update();
+
+        var labelStyle = args.selected ? EditorStyles.whiteLabel : EditorStyles.label;
         labelStyle.alignment = TextAnchor.MiddleLeft;
-            
-		for (var visibleColumnIndex = 0; visibleColumnIndex < args.GetNumVisibleColumns(); visibleColumnIndex++)
+
+        for (var visibleColumnIndex = 0; visibleColumnIndex < args.GetNumVisibleColumns(); ++visibleColumnIndex)
         {
             var rect = args.GetCellRect(visibleColumnIndex);
-			CenterRectUsingSingleLineHeight(ref rect);
+            CenterRectUsingSingleLineHeight(ref rect);
             var columnIndex = args.GetColumn(visibleColumnIndex);
-			var column = (MeshRendererColumn)this.multiColumnHeader.GetColumn(columnIndex);
+            var column = (MeshRendererColumn)this.multiColumnHeader.GetColumn(columnIndex);
 
-			if (column.GetProperty == null)
-				EditorGUI.LabelField(rect, column.GetValue(item).ToString(), labelStyle);
-			else
-			{
-				var sp = column.GetProperty(item);
-				if (column.SetValue == null)
-				{
-					EditorGUI.BeginChangeCheck();
-					EditorGUI.PropertyField(rect, sp, GUIContent.none);
-					if (EditorGUI.EndChangeCheck())
-					{
-						var ids = GetSelection();
-						if (ids.Contains(item.id))
-						{
-							var rows = FindRows(ids);
-							foreach (MeshRendererTableItem r in rows)
-							{
-								if (r.id == item.id)
-									continue;
-								
-								if (sp.serializedObject.targetObject is MeshRenderer)
-								{
-									r.element.soMR.Update();
-									r.element.soMR.CopyFromSerializedProperty(sp);
-									r.element.soMR.ApplyModifiedProperties();
-								}else
-								{
-									r.element.soGO.Update();
-									r.element.soGO.CopyFromSerializedProperty(sp);
-									r.element.soGO.ApplyModifiedProperties();
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					EditorGUI.BeginProperty(rect, GUIContent.none, sp);
-					EditorGUI.BeginChangeCheck();
-					object newValue = null;
-					var currentValue = column.GetValue(item);
-					if (currentValue is bool)
-						newValue = EditorGUI.Toggle(rect, (bool)currentValue);
-					else if (currentValue is Enum)
-						newValue = EditorGUI.EnumPopup(rect, (Enum)currentValue);
-					if (EditorGUI.EndChangeCheck())
-					{
-						column.SetValue(item, newValue);
-						var ids = GetSelection();
-						if (ids.Contains(item.id))
-						{
-							var rows = FindRows(ids);
-							foreach (MeshRendererTableItem r in rows)
-							{
-								if (r.id == item.id)
-									continue;
+            if (column.GetProperty == null)
+                EditorGUI.LabelField(rect, column.GetValue(item).ToString(), labelStyle);
+            else
+            {
+                var sp = column.GetProperty(item);
+                if (column.SetValue == null)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    EditorGUI.PropertyField(rect, sp, GUIContent.none);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        var ids = GetSelection();
+                        if (ids.Contains(item.id))
+                        {
+                            var rows = FindRows(ids);
+                            foreach (MeshRendererTableItem r in rows)
+                            {
+                                if (r.id == item.id)
+                                    continue;
 
-								if (sp.serializedObject.targetObject is MeshRenderer)
-								{
-									r.element.soMR.Update();
-									r.element.soMR.CopyFromSerializedProperty(sp);
-									r.element.soMR.ApplyModifiedProperties();
-								}else
-								{
-									r.element.soGO.Update();
-									r.element.soGO.CopyFromSerializedProperty(sp);
-									r.element.soGO.ApplyModifiedProperties();
-								}
-							}
-						}
-					}
-					EditorGUI.EndProperty();
-				}
-				
-			}
+                                if (sp.serializedObject.targetObject is MeshRenderer)
+                                {
+                                    r.element.soMR.Update();
+                                    r.element.soMR.CopyFromSerializedProperty(sp);
+                                    r.element.soMR.ApplyModifiedProperties();
+                                }else
+                                {
+                                    r.element.soGO.Update();
+                                    r.element.soGO.CopyFromSerializedProperty(sp);
+                                    r.element.soGO.ApplyModifiedProperties();
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    EditorGUI.BeginProperty(rect, GUIContent.none, sp);
+                    EditorGUI.BeginChangeCheck();
+                    object newValue = null;
+                    var currentValue = column.GetValue(item);
+                    if (currentValue is bool)
+                        newValue = EditorGUI.Toggle(rect, (bool)currentValue);
+                    else if (currentValue is Enum)
+                        newValue = EditorGUI.EnumPopup(rect, (Enum)currentValue);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        column.SetValue(item, newValue);
+                        var ids = GetSelection();
+                        if (ids.Contains(item.id))
+                        {
+                            var rows = FindRows(ids);
+                            foreach (MeshRendererTableItem r in rows)
+                            {
+                                if (r.id == item.id)
+                                    continue;
+
+                                if (sp.serializedObject.targetObject is MeshRenderer)
+                                {
+                                    r.element.soMR.Update();
+                                    r.element.soMR.CopyFromSerializedProperty(sp);
+                                    r.element.soMR.ApplyModifiedProperties();
+                                }else
+                                {
+                                    r.element.soGO.Update();
+                                    r.element.soGO.CopyFromSerializedProperty(sp);
+                                    r.element.soGO.ApplyModifiedProperties();
+                                }
+                            }
+                        }
+                    }
+                    EditorGUI.EndProperty();
+                }
+
+            }
         }
-
-		item.element.soGO.ApplyModifiedProperties();
-		item.element.soMR.ApplyModifiedProperties();
+        item.element.soGO.ApplyModifiedProperties();
+        item.element.soMR.ApplyModifiedProperties();
     }
 
-	protected override void SelectionChanged(IList<int> selectedIDs)
-	{
-		Selection.instanceIDs = selectedIDs.ToArray();
-	}
-
-    protected override bool DoesItemMatchSearch(TreeViewItem item, string search)
+    protected override void SelectionChanged(IList<int> selectedIDs)
     {
-        var mrItem = (MeshRendererTableItem) item;
-
-        return mrItem.element.name.Contains(search);
+        Selection.instanceIDs = selectedIDs.ToArray();
     }
-    
-	private void OnVisibleColumnChanged(MultiColumnHeader header)
+
+    protected override void SearchChanged(string newSearch)
+    {
+        FullReload();
+    }
+
+    private void OnVisibleColumnChanged(MultiColumnHeader header)
     {
         Reload();
     }
-	
-    private void SortItems(MultiColumnHeader multiColumnHeader)
+
+    void OnSortingChanged(MultiColumnHeader multiColumnHeader)
     {
-        int index = multiColumnHeader.sortedColumnIndex;
-		if (index < 0) return;
+        FullReload();
+    }
+
+    private void Sort(IList<TreeViewItem> rows, MultiColumnHeader multiColumnHeader)
+    {
+        var index = multiColumnHeader.sortedColumnIndex;
+        if (index < 0 || rows == null)
+            return;
         SessionState.SetInt(sortedColumnIndexStateKey, index);
-        var ascending = multiColumnHeader.IsSortedAscending(index);
 
-        if (m_Items == null) return;
-		var items = m_Items.Cast<MeshRendererTableItem>();
-		var column = (MeshRendererColumn)multiColumnHeader.GetColumn(index);
-		
-        IOrderedEnumerable<MeshRendererTableItem> orderedEnumerable;
+        var column = (MeshRendererColumn)multiColumnHeader.GetColumn(index);
 
-		if (column == null) return;
-		orderedEnumerable = items.OrderBy(item => 
-		{
-			if (column.GetValue != null)
-				return column.GetValue(item);
-			var sp = column.GetProperty(item);
-			switch (sp.propertyType)
-			{
-				case SerializedPropertyType.Boolean :
-					return sp.boolValue;
-				case SerializedPropertyType.Float :
-					return sp.floatValue;
-				case SerializedPropertyType.ObjectReference :
-					return sp.objectReferenceValue ? sp.objectReferenceValue.name : string.Empty;
-				case SerializedPropertyType.Enum :
-					return sp.enumValueIndex;
-				default:
-                    throw new ArgumentOutOfRangeException("columnIndex", item, null);
-			}
-		});
-        
-        items = orderedEnumerable.AsEnumerable();
-
-        if (!ascending)
+        IEnumerable<TreeViewItem> items = rows.OrderBy(item =>
         {
-            items = items.Reverse();
-        }
+            if (column.GetValue != null)
+                return column.GetValue((MeshRendererTableItem)item);
+            var sp = column.GetProperty((MeshRendererTableItem)item);
+            switch (sp.propertyType)
+            {
+                case SerializedPropertyType.Boolean :
+                    return sp.boolValue;
+                case SerializedPropertyType.Float :
+                    return sp.floatValue;
+                case SerializedPropertyType.ObjectReference :
+                    return sp.objectReferenceValue ? sp.objectReferenceValue.name : string.Empty;
+                case SerializedPropertyType.Enum :
+                    return sp.enumValueIndex;
+                default:
+                    throw new ArgumentOutOfRangeException("columnIndex", item, null);
+            }
+        });
 
-        m_Items = items.Cast<TreeViewItem>().ToList();
-		Reload();
-	}
+        if (!multiColumnHeader.IsSortedAscending(index))
+            items = items.Reverse();
+
+        m_Items = items.ToList();
+    }
 }
 
 }// namespace MomomaAssets
