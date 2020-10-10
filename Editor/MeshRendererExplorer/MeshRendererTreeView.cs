@@ -177,14 +177,15 @@ public class MeshRendererTableHeader : MultiColumnHeader
 		columns.Add(column);
 	}
 
-	public void AddtoList(string name, float width, MeshRendererColumn.GetValue getValueDelegate, MeshRendererColumn.SetValue setValueDelegate)
+	public void AddtoList(string name, float width, MeshRendererColumn.GetValue getValueDelegate, MeshRendererColumn.SetValue setValueDelegate = null, MeshRendererColumn.Property propertyDelegate = null)
 	{
 		var column = new MeshRendererColumn
 		{
 			width = width,
     	    headerContent = new GUIContent(name),
 			setValueDelegate = setValueDelegate,
-			getValueDelegate = getValueDelegate
+			getValueDelegate = getValueDelegate,
+			propertyDelegate = propertyDelegate
 		};
 		columns.Add(column);
 	}
@@ -332,7 +333,7 @@ public class MeshRendererTreeView : TreeView
 				EditorGUI.LabelField(rect, column.getValueDelegate(item).ToString(), labelStyle);
 			else
 			{
-				if (column.propertyDelegate != null)
+				if (column.setValueDelegate == null)
 				{
 					EditorGUI.BeginChangeCheck();
 					var sp = column.propertyDelegate(item);
@@ -365,6 +366,7 @@ public class MeshRendererTreeView : TreeView
 				}
 				else
 				{
+					EditorGUI.BeginProperty(rect, GUIContent.none, column.propertyDelegate(item));
 					EditorGUI.BeginChangeCheck();
 					object newValue = null;
 					var currentValue = column.getValueDelegate(item);
@@ -392,6 +394,7 @@ public class MeshRendererTreeView : TreeView
 							}
 						}
 					}
+					EditorGUI.EndProperty();
 				}
 				
 			}

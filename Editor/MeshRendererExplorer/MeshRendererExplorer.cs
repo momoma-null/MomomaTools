@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Rendering;
@@ -45,14 +44,14 @@ public class MeshRendererExplorer : EditorWindow
 	private MeshRendererTableHeader MRStaticHeader()
 	{
 		var header = new MeshRendererTableHeader(null);
-		header.AddtoList("Name", 100,(item) => {return item.element.name;}, null);
-		header.AddtoList("Lightmap", 30, (item) => {return item.element.LightmapStatic;}, (item, value) => {item.element.LightmapStatic = (bool)value;});
-		header.AddtoList("Occluder", 30, (item) => {return item.element.OccluderStatic;}, (item, value) => {item.element.OccluderStatic = (bool)value;});
-		header.AddtoList("Occludee", 30, (item) => {return item.element.OccludeeStatic;}, (item, value) => {item.element.OccludeeStatic = (bool)value;});
-		header.AddtoList("Batching", 30, (item) => {return item.element.BatchingStatic;}, (item, value) => {item.element.BatchingStatic = (bool)value;});
-		header.AddtoList("Navigation", 30, (item) => {return item.element.NavigationStatic;}, (item, value) => {item.element.NavigationStatic = (bool)value;});
-		header.AddtoList("OffMeshLink", 30, (item) => {return item.element.OffMeshLinkGeneration;}, (item, value) => {item.element.OffMeshLinkGeneration = (bool)value;});
-		header.AddtoList("Reflection", 30, (item) => {return item.element.ReflectionProbeStatic;}, (item, value) => {item.element.ReflectionProbeStatic = (bool)value;});
+		header.AddtoList("Name", 100,(item) => {return item.element.name;});
+		header.AddtoList("Lightmap", 30, (item) => {return item.element.LightmapStatic;}, (item, value) => {item.element.LightmapStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("Occluder", 30, (item) => {return item.element.OccluderStatic;}, (item, value) => {item.element.OccluderStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("Occludee", 30, (item) => {return item.element.OccludeeStatic;}, (item, value) => {item.element.OccludeeStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("Batching", 30, (item) => {return item.element.BatchingStatic;}, (item, value) => {item.element.BatchingStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("Navigation", 30, (item) => {return item.element.NavigationStatic;}, (item, value) => {item.element.NavigationStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("OffMeshLink", 30, (item) => {return item.element.OffMeshLinkGeneration;}, (item, value) => {item.element.OffMeshLinkGeneration = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
+		header.AddtoList("Reflection", 30, (item) => {return item.element.ReflectionProbeStatic;}, (item, value) => {item.element.ReflectionProbeStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
 		header.SetList();
 
 		return header;
@@ -61,9 +60,9 @@ public class MeshRendererExplorer : EditorWindow
 	private MeshRendererTableHeader MRLightingHeader()
 	{
 		var header = new MeshRendererTableHeader(null);
-		header.AddtoList("Name", 100, (item) => {return item.element.name;}, null);
-		header.AddtoList("LightProbe", 50, (item) => {return (LightProbeUsage)item.element.m_LightProbeUsage.intValue;}, (item, value) => {item.element.m_LightProbeUsage.intValue = (int)value;});
-		header.AddtoList("ReflectionProbe", 50, (item) => {return (ReflectionProbeUsage)item.element.m_ReflectionProbeUsage.intValue;}, (item, value) => {item.element.m_ReflectionProbeUsage.intValue = (int)value;});
+		header.AddtoList("Name", 100, (item) => {return item.element.name;});
+		header.AddtoList("LightProbe", 50, (item) => {return (LightProbeUsage)item.element.m_LightProbeUsage.intValue;}, (item, value) => {item.element.m_LightProbeUsage.intValue = (int)value;}, (item) => {return item.element.m_LightProbeUsage;});
+		header.AddtoList("ReflectionProbe", 50, (item) => {return (ReflectionProbeUsage)item.element.m_ReflectionProbeUsage.intValue;}, (item, value) => {item.element.m_ReflectionProbeUsage.intValue = (int)value;}, (item) => {return item.element.m_ReflectionProbeUsage;});
 		header.AddtoList("ProbeAnchor", 50, (item) => {return item.element.m_ProbeAnchor;});
 		header.AddtoList("CastShadows", 50, (item) => {return item.element.m_CastShadows;});
 		header.AddtoList("ReceiveShadows", 30, (item) => {return item.element.m_ReceiveShadows;});
@@ -75,7 +74,7 @@ public class MeshRendererExplorer : EditorWindow
 	private MeshRendererTableHeader MRLightmapHeader()
 	{
 		var header = new MeshRendererTableHeader(null);
-		header.AddtoList("Name", 100, (item) => {return item.element.name;}, null);
+		header.AddtoList("Name", 100, (item) => {return item.element.name;});
 		header.AddtoList("ScaleInLightmap", 50, (item) => {return item.element.m_ScaleInLightmap;});
 		header.AddtoList("PrioritizeIllumination", 30, (item) => {return item.element.m_ImportantGI;});
 		header.AddtoList("StitchSeams", 30, (item) => {return item.element.m_StitchLightmapSeams;});
