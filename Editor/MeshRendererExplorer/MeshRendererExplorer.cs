@@ -25,6 +25,9 @@ public class MeshRendererExplorer : EditorWindow
 	private SearchField searchField;
     private MeshRendererTreeView meshRendererTreeView;
 	private const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
+	private const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
+	private const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
+	private const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
 
     
 	// Generate menu tab
@@ -87,7 +90,7 @@ public class MeshRendererExplorer : EditorWindow
     {
         var state = new TreeViewState();
         var header = MRStaticHeader();
-        meshRendererTreeView = new MeshRendererTreeView(state, header, false, rootGO);
+        meshRendererTreeView = new MeshRendererTreeView(state, header, sortedColumnIndexStaticStateKey, false, rootGO);
 		meshRendererTreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         searchField = new SearchField();
         searchField.downOrUpArrowKeyPressed += meshRendererTreeView.SetFocusAndEnsureSelectedItem;
@@ -97,7 +100,7 @@ public class MeshRendererExplorer : EditorWindow
     {
         var state = new TreeViewState();
         var header = MRLightingHeader();
-        meshRendererTreeView = new MeshRendererTreeView(state, header, false, rootGO);
+        meshRendererTreeView = new MeshRendererTreeView(state, header, sortedColumnIndexLightingStateKey, false, rootGO);
 		meshRendererTreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         searchField = new SearchField();
         searchField.downOrUpArrowKeyPressed += meshRendererTreeView.SetFocusAndEnsureSelectedItem;
@@ -107,7 +110,7 @@ public class MeshRendererExplorer : EditorWindow
     {
         var state = new TreeViewState();
         var header = MRLightmapHeader();
-        meshRendererTreeView = new MeshRendererTreeView(state, header, true, rootGO);
+        meshRendererTreeView = new MeshRendererTreeView(state, header, sortedColumnIndexLightmapStateKey, true, rootGO);
         meshRendererTreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         searchField = new SearchField();
         searchField.downOrUpArrowKeyPressed += meshRendererTreeView.SetFocusAndEnsureSelectedItem;

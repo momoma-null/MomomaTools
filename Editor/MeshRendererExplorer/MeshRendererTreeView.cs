@@ -208,28 +208,26 @@ public class MeshRendererColumn : MultiColumnHeaderState.Column
 
 public class MeshRendererTreeView : TreeView
 {
-	//private const string sortedColumnIndexStateKey = "MeshRendererViewWindow_sortedColumnIndex";
-    
-    public MeshRendererTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, bool lightmapStaticOnly = false, GameObject rootObj = null) : base(state, multiColumnHeader)
+    public MeshRendererTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, bool lightmapStaticOnly = false, GameObject rootObj = null) : base(state, multiColumnHeader)
     {
         rowHeight = 16;
         showAlternatingRowBackgrounds = true;
-		m_LightmapStaticOnly = lightmapStaticOnly;
-        multiColumnHeader.sortingChanged += SortItems;
+		multiColumnHeader.sortingChanged += SortItems;
 		multiColumnHeader.visibleColumnsChanged += OnVisibleColumnChanged;
-		m_RootGO = rootObj;
+		multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
+		this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
+		this.lightmapStaticOnly = lightmapStaticOnly;
+        this.m_RootGO = rootObj;
 
         multiColumnHeader.ResizeToFit();
         Reload();
-        
-		// Setup
-        //multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
     }
 
 	private List<TreeViewItem> m_Items;
 	private List<TreeViewItem> m_SearchedItems;
 	private GameObject m_RootGO;
-	private bool m_LightmapStaticOnly;
+	private readonly bool lightmapStaticOnly;
+	private readonly string sortedColumnIndexStateKey;
 
 	public GameObject RootGO
 	{
@@ -250,10 +248,10 @@ public class MeshRendererTreeView : TreeView
 		{
 			m_Items = new List<TreeViewItem>();
 			
-			Scene scene = SceneManager.GetActiveScene();
+			var scene = SceneManager.GetActiveScene();
 			if (scene.IsValid())
 			{
-        		List<MeshRenderer> meshRendererArray = new List<MeshRenderer>();
+        		var meshRendererArray = new List<MeshRenderer>();
 
 				if (m_RootGO)
 				{
@@ -263,7 +261,7 @@ public class MeshRendererTreeView : TreeView
 					}
 				}else
 				{
-        			GameObject[] rootObjs = scene.GetRootGameObjects();
+        			var rootObjs = scene.GetRootGameObjects();
 		
         			foreach (var rootObj in rootObjs)
         			{
@@ -274,7 +272,7 @@ public class MeshRendererTreeView : TreeView
         
 				foreach (var child in meshRendererArray)
         		{
-	       			if(m_LightmapStaticOnly
+	       			if(lightmapStaticOnly
 					 && 0 == (GameObjectUtility.GetStaticEditorFlags(child.gameObject) & StaticEditorFlags.LightmapStatic)) continue;
 					m_Items.Add(new MeshRendererTableItem(child.gameObject.GetInstanceID(), child));
         		}
@@ -425,7 +423,7 @@ public class MeshRendererTreeView : TreeView
     {
         int index = multiColumnHeader.sortedColumnIndex;
 		if (index < 0) return;
-        //SessionState.SetInt(sortedColumnIndexStateKey, index);
+        SessionState.SetInt(sortedColumnIndexStateKey, index);
         var ascending = multiColumnHeader.IsSortedAscending(index);
 
         if (m_Items == null) return;
