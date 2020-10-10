@@ -47,7 +47,7 @@ public class MeshRendererExplorer : EditorWindow
 	private MeshRendererTableHeader MRStaticHeader()
 	{
 		var header = new MeshRendererTableHeader(null);
-		header.AddtoList("Name", 100,(item) => {return item.element.name;});
+		header.AddtoList("Name", 100, (item) => {return item.element.name;});
 		header.AddtoList("Lightmap", 30, (item) => {return item.element.LightmapStatic;}, (item, value) => {item.element.LightmapStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
 		header.AddtoList("Occluder", 30, (item) => {return item.element.OccluderStatic;}, (item, value) => {item.element.OccluderStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});
 		header.AddtoList("Occludee", 30, (item) => {return item.element.OccludeeStatic;}, (item, value) => {item.element.OccludeeStatic = (bool)value;}, (item) => {return item.element.m_StaticEditorFlags;});

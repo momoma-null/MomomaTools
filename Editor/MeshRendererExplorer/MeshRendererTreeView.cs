@@ -166,26 +166,26 @@ public class MeshRendererTableHeader : MultiColumnHeader
         columns = new List<MultiColumnHeaderState.Column>();
     }
 
-	public void AddtoList(string name, float width, MeshRendererColumn.Property propertyDelegate)
+	public void AddtoList(string name, float width, Func<MeshRendererTableItem, SerializedProperty> GetProperty)
 	{
 		var column = new MeshRendererColumn
 		{
 			width = width,
     	    headerContent = new GUIContent(name),
-			propertyDelegate = propertyDelegate
+			GetProperty = GetProperty
 		};
 		columns.Add(column);
 	}
 
-	public void AddtoList(string name, float width, MeshRendererColumn.GetValue getValueDelegate, MeshRendererColumn.SetValue setValueDelegate = null, MeshRendererColumn.Property propertyDelegate = null)
+	public void AddtoList(string name, float width, Func<MeshRendererTableItem, object> GetValue, Action<MeshRendererTableItem, object> SetValue = null, Func<MeshRendererTableItem, SerializedProperty> GetProperty = null)
 	{
 		var column = new MeshRendererColumn
 		{
 			width = width,
     	    headerContent = new GUIContent(name),
-			setValueDelegate = setValueDelegate,
-			getValueDelegate = getValueDelegate,
-			propertyDelegate = propertyDelegate
+			GetValue = GetValue,
+			SetValue = SetValue,
+			GetProperty = GetProperty
 		};
 		columns.Add(column);
 	}
@@ -198,12 +198,9 @@ public class MeshRendererTableHeader : MultiColumnHeader
 
 public class MeshRendererColumn : MultiColumnHeaderState.Column
 {
-	public delegate SerializedProperty Property(MeshRendererTableItem mrItem);
-	public delegate void SetValue(MeshRendererTableItem mrItem, object setObj);
-	public delegate object GetValue(MeshRendererTableItem mrItem);
-	public Property propertyDelegate;
-	public SetValue setValueDelegate;
-	public GetValue getValueDelegate;
+	public Func<MeshRendererTableItem, SerializedProperty> GetProperty;
+	public Action<MeshRendererTableItem, object> SetValue;
+	public Func<MeshRendererTableItem, object> GetValue;
 }
 
 public class MeshRendererTreeView : TreeView
@@ -327,14 +324,14 @@ public class MeshRendererTreeView : TreeView
             var columnIndex = args.GetColumn(visibleColumnIndex);
 			var column = (MeshRendererColumn)this.multiColumnHeader.GetColumn(columnIndex);
 
-			if (column.propertyDelegate == null && column.setValueDelegate == null)
-				EditorGUI.LabelField(rect, column.getValueDelegate(item).ToString(), labelStyle);
+			if (column.GetProperty == null)
+				EditorGUI.LabelField(rect, column.GetValue(item).ToString(), labelStyle);
 			else
 			{
-				if (column.setValueDelegate == null)
+				var sp = column.GetProperty(item);
+				if (column.SetValue == null)
 				{
 					EditorGUI.BeginChangeCheck();
-					var sp = column.propertyDelegate(item);
 					EditorGUI.PropertyField(rect, sp, GUIContent.none);
 					if (EditorGUI.EndChangeCheck())
 					{
@@ -364,17 +361,17 @@ public class MeshRendererTreeView : TreeView
 				}
 				else
 				{
-					EditorGUI.BeginProperty(rect, GUIContent.none, column.propertyDelegate(item));
+					EditorGUI.BeginProperty(rect, GUIContent.none, sp);
 					EditorGUI.BeginChangeCheck();
 					object newValue = null;
-					var currentValue = column.getValueDelegate(item);
+					var currentValue = column.GetValue(item);
 					if (currentValue is bool)
 						newValue = EditorGUI.Toggle(rect, (bool)currentValue);
 					else if (currentValue is Enum)
 						newValue = EditorGUI.EnumPopup(rect, (Enum)currentValue);
 					if (EditorGUI.EndChangeCheck())
 					{
-						column.setValueDelegate(item, newValue);
+						column.SetValue(item, newValue);
 						var ids = GetSelection();
 						if (ids.Contains(item.id))
 						{
@@ -384,11 +381,17 @@ public class MeshRendererTreeView : TreeView
 								if (r.id == item.id)
 									continue;
 
-								r.element.soGO.Update();
-								r.element.soMR.Update();
-								column.setValueDelegate(r, newValue);
-								r.element.soGO.ApplyModifiedProperties();
-								r.element.soMR.ApplyModifiedProperties();
+								if (sp.serializedObject.targetObject is MeshRenderer)
+								{
+									r.element.soMR.Update();
+									r.element.soMR.CopyFromSerializedProperty(sp);
+									r.element.soMR.ApplyModifiedProperties();
+								}else
+								{
+									r.element.soGO.Update();
+									r.element.soGO.CopyFromSerializedProperty(sp);
+									r.element.soGO.ApplyModifiedProperties();
+								}
 							}
 						}
 					}
@@ -435,18 +438,19 @@ public class MeshRendererTreeView : TreeView
 		if (column == null) return;
 		orderedEnumerable = items.OrderBy(item => 
 		{
-			if (column.getValueDelegate != null)
-				return column.getValueDelegate(item);
-			switch (column.propertyDelegate(item).propertyType)
+			if (column.GetValue != null)
+				return column.GetValue(item);
+			var sp = column.GetProperty(item);
+			switch (sp.propertyType)
 			{
 				case SerializedPropertyType.Boolean :
-					return column.propertyDelegate(item).boolValue;
+					return sp.boolValue;
 				case SerializedPropertyType.Float :
-					return column.propertyDelegate(item).floatValue;
+					return sp.floatValue;
 				case SerializedPropertyType.ObjectReference :
-					return column.propertyDelegate(item).objectReferenceValue ? column.propertyDelegate(item).objectReferenceValue.name : string.Empty;
+					return sp.objectReferenceValue ? sp.objectReferenceValue.name : string.Empty;
 				case SerializedPropertyType.Enum :
-					return column.propertyDelegate(item).enumValueIndex;
+					return sp.enumValueIndex;
 				default:
                     throw new ArgumentOutOfRangeException("columnIndex", item, null);
 			}
