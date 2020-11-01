@@ -9,9 +9,27 @@ public class MissingReferenceFinder : EditorWindow
 {
 	List<SerializedProperty> propertyList = new List<SerializedProperty>();
 	HashSet<Object> objectHS = new HashSet<Object>();
-
 	Vector2 scrollPos = Vector2.zero;
-	
+
+	readonly static Vector2 k_iconSize = new Vector2(EditorGUIUtility.singleLineHeight * 1.2f, EditorGUIUtility.singleLineHeight * 1.2f);
+
+	static class Style
+	{
+		static GUIStyle m_LabelStyle;
+		internal static GUIStyle labelStyle
+		{
+			get
+			{
+				if (m_LabelStyle == null)
+				{
+					m_LabelStyle = new GUIStyle(GUI.skin.label);
+					m_LabelStyle.wordWrap = true;
+				}
+				return m_LabelStyle;
+			}
+		}
+	}
+
 	// Generate menu tab
 	[MenuItem("MomomaTools/MissingReferenceFinder")]
     static void ShowWindow()
@@ -32,30 +50,37 @@ public class MissingReferenceFinder : EditorWindow
 		{
 			FindAllMissingReference();
 		}
-		
-		scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
-		foreach (var property in propertyList)
+
+		EditorGUILayout.Space();
+
+		using(var scrollView = new EditorGUILayout.ScrollViewScope(scrollPos))
 		{
-			var obj = property.serializedObject.targetObject;
-			if (obj == null)
-				continue;
-			
-			EditorGUILayout.BeginHorizontal(GUI.skin.box);
-			
-			var typeName = obj.GetType().Name;
-			EditorGUILayout.LabelField(obj.name, typeName + " " + property.displayName);
-			if (GUILayout.Button("Select"))
+			try
 			{
-				var selectObj = obj;
-				if (obj is Component)
-					selectObj = ((Component)obj).gameObject;
-				Selection.activeObject = selectObj;
+				EditorGUIUtility.SetIconSize(k_iconSize);
+				scrollPos = scrollView.scrollPosition;
+				foreach (var property in propertyList)
+				{
+					var obj = property.serializedObject.targetObject;
+					if (obj == null)
+						continue;
+
+					using(new EditorGUILayout.HorizontalScope())
+					{
+						if (GUILayout.Button("○", GUILayout.MaxWidth(EditorGUIUtility.singleLineHeight * 1.2f)))
+						{
+							Selection.activeObject = obj;
+						}
+						GUILayout.Label(EditorGUIUtility.ObjectContent(obj, obj.GetType()), Style.labelStyle, GUILayout.ExpandHeight(false));
+						EditorGUILayout.LabelField(property.propertyPath, Style.labelStyle);
+					}
+				}
 			}
-
-			EditorGUILayout.EndHorizontal();
+			finally
+			{
+				EditorGUIUtility.SetIconSize(Vector2.zero);
+			}
 		}
-
-		EditorGUILayout.EndScrollView();
 	}
 
 	void FindAllMissingReference()
@@ -64,16 +89,22 @@ public class MissingReferenceFinder : EditorWindow
 		objectHS = new HashSet<Object>();
 		var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
 		var gos = scene.GetRootGameObjects();
-		foreach (var go in gos)
+		try
 		{
-			var comps = go.GetComponentsInChildren<Component>(true);
-			foreach (var comp in comps)
+			foreach (var go in gos)
 			{
-				if (comp != null)
-					FindMissingReference(comp);
+				var comps = go.GetComponentsInChildren<Component>(true);
+				foreach (var comp in comps)
+				{
+					if (comp != null)
+						FindMissingReference(comp);
+				}
 			}
 		}
-		EditorUtility.ClearProgressBar();
+		finally
+		{
+			EditorUtility.ClearProgressBar();
+		}
 	}
 
 	void FindMissingReference(Object obj)
@@ -82,7 +113,7 @@ public class MissingReferenceFinder : EditorWindow
 			return;
 
 		EditorUtility.DisplayProgressBar("Search Objects", objectHS.Count.ToString() + " " + obj.GetType().Name + " " + obj, 0);
-		
+
 		var sp = new SerializedObject(obj).GetIterator();
 		while (sp.NextVisible(true))
 		{
