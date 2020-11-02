@@ -11,25 +11,6 @@ public class MissingReferenceFinder : EditorWindow
 	HashSet<Object> objectHS = new HashSet<Object>();
 	Vector2 scrollPos = Vector2.zero;
 
-	readonly static Vector2 k_iconSize = new Vector2(EditorGUIUtility.singleLineHeight * 1.2f, EditorGUIUtility.singleLineHeight * 1.2f);
-
-	static class Style
-	{
-		static GUIStyle m_LabelStyle;
-		internal static GUIStyle labelStyle
-		{
-			get
-			{
-				if (m_LabelStyle == null)
-				{
-					m_LabelStyle = new GUIStyle(GUI.skin.label);
-					m_LabelStyle.wordWrap = true;
-				}
-				return m_LabelStyle;
-			}
-		}
-	}
-
 	// Generate menu tab
 	[MenuItem("MomomaTools/MissingReferenceFinder")]
     static void ShowWindow()
@@ -55,30 +36,22 @@ public class MissingReferenceFinder : EditorWindow
 
 		using(var scrollView = new EditorGUILayout.ScrollViewScope(scrollPos))
 		{
-			try
+			scrollPos = scrollView.scrollPosition;
+			foreach (var property in propertyList)
 			{
-				EditorGUIUtility.SetIconSize(k_iconSize);
-				scrollPos = scrollView.scrollPosition;
-				foreach (var property in propertyList)
-				{
-					var obj = property.serializedObject.targetObject;
-					if (obj == null)
-						continue;
+				var obj = property.serializedObject.targetObject;
+				if (obj == null)
+					continue;
 
-					using(new EditorGUILayout.HorizontalScope())
+				using(new EditorGUILayout.HorizontalScope())
+				{
+					using(new EditorGUI.DisabledGroupScope(true))
 					{
-						if (GUILayout.Button("○", GUILayout.MaxWidth(EditorGUIUtility.singleLineHeight * 1.2f)))
-						{
-							Selection.activeObject = obj;
-						}
-						GUILayout.Label(EditorGUIUtility.ObjectContent(obj, obj.GetType()), Style.labelStyle, GUILayout.ExpandHeight(false));
-						EditorGUILayout.LabelField(property.propertyPath, Style.labelStyle);
+						EditorGUILayout.ObjectField("", obj, typeof(Object), true);
 					}
+					GUILayout.Label(property.propertyPath);
+					GUILayout.FlexibleSpace();
 				}
-			}
-			finally
-			{
-				EditorGUIUtility.SetIconSize(Vector2.zero);
 			}
 		}
 	}
