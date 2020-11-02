@@ -8,20 +8,19 @@ using UnityEngine;
 
 namespace MomomaAssets
 {
-    abstract public class UnityObjectTreeViewItem<T> : TreeViewItem
+    abstract public class UnityObjectTreeViewItem : TreeViewItem
     {
-        abstract public T element { get; set; }
         abstract public SerializedObject serializedObject { get; }
-        public UnityObjectTreeViewItem(int id, UnityEngine.Object obj) : base(id) { }
+        protected UnityObjectTreeViewItem(int id, UnityEngine.Object obj) : base(id) { }
     }
 
-    public class MultiColumnHeaderMaker<T, TElement> where T : UnityObjectTreeViewItem<TElement>
+    public class MultiColumnHeaderMaker<T> where T : UnityObjectTreeViewItem
     {
-        private List<MultiColumn<T, TElement>> columns = new List<MultiColumn<T, TElement>>();
+        List<MultiColumn<T>> columns = new List<MultiColumn<T>>();
 
         public void AddtoList(string name, float width, Func<T, SerializedProperty> GetProperty)
         {
-            var column = new MultiColumn<T, TElement>
+            var column = new MultiColumn<T>
             {
                 width = width,
                 headerContent = new GUIContent(name),
@@ -32,7 +31,7 @@ namespace MomomaAssets
 
         public void AddtoList(string name, float width, Func<T, object> GetValue, Action<T, object> SetValue = null, Func<T, SerializedProperty> GetProperty = null)
         {
-            var column = new MultiColumn<T, TElement>
+            var column = new MultiColumn<T>
             {
                 width = width,
                 headerContent = new GUIContent(name),
@@ -49,7 +48,7 @@ namespace MomomaAssets
         }
     }
 
-    public class MultiColumn<T, TElement> : MultiColumnHeaderState.Column where T : UnityObjectTreeViewItem<TElement>
+    public class MultiColumn<T> : MultiColumnHeaderState.Column where T : UnityObjectTreeViewItem
     {
         public Func<T, object> GetValue;
         public Action<T, object> SetValue;
@@ -61,7 +60,7 @@ namespace MomomaAssets
         void FullReload();
     }
 
-    public class UnityObjectTreeView<T, TElement> : TreeView, IFullReloadTreeView where T : UnityObjectTreeViewItem<TElement>
+    public class UnityObjectTreeView<T> : TreeView, IFullReloadTreeView where T : UnityObjectTreeViewItem
     {
         public UnityObjectTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, Func<IEnumerable<UnityEngine.Object>> GetObjects) : base(state, multiColumnHeader)
         {
@@ -73,7 +72,7 @@ namespace MomomaAssets
             multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
             this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
             this.GetObjects = GetObjects;
-            this.constructorInfo = typeof(T).GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[] { typeof(int), typeof(UnityEngine.Object) }, null);
+            constructorInfo = typeof(T).GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[] { typeof(int), typeof(UnityEngine.Object) }, null);
 
             multiColumnHeader.ResizeToFit();
             Reload();
@@ -133,7 +132,7 @@ namespace MomomaAssets
                 var rect = args.GetCellRect(visibleColumnIndex);
                 CenterRectUsingSingleLineHeight(ref rect);
                 var columnIndex = args.GetColumn(visibleColumnIndex);
-                var column = (MultiColumn<T, TElement>)this.multiColumnHeader.GetColumn(columnIndex);
+                var column = (MultiColumn<T>)this.multiColumnHeader.GetColumn(columnIndex);
 
                 if (column.GetProperty == null)
                     EditorGUI.LabelField(rect, column.GetValue(item).ToString(), labelStyle);
@@ -235,7 +234,7 @@ namespace MomomaAssets
                 return;
             SessionState.SetInt(sortedColumnIndexStateKey, index);
 
-            var column = (MultiColumn<T, TElement>)multiColumnHeader.GetColumn(index);
+            var column = (MultiColumn<T>)multiColumnHeader.GetColumn(index);
 
             IEnumerable<TreeViewItem> items = rows.OrderBy(item =>
             {
