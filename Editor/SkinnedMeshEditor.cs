@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System.Linq;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.IO;
@@ -45,21 +46,23 @@ namespace MomomaAssets
             if (EditorGUI.EndChangeCheck())
             {
                 mesh = new Mesh();
-                var newVertices = new List<Vector3>();
-                System.Array.ForEach(srcMesh.vertices, v => newVertices.Add(v * 100));
-                mesh.vertices = newVertices.ToArray();
+                mesh.vertices = srcMesh.vertices;
                 mesh.uv = srcMesh.uv;
                 mesh.triangles = adjacentTriangles[meshIndex].triangles.ToArray();
+                MeshUtility.Optimize(mesh);
+                mesh.RecalculateBounds();
             }
             if (mesh)
             {
                 if (previewRender == null)
                     previewRender = new PreviewRenderUtility();
-                var rect = new Rect(50, 50, 512, 512);
-                var centerPos = mesh.bounds.center;
+                var rect = new Rect(80, 80, 512, 512);
+                var centerPos = -mesh.bounds.center;
                 previewRender.BeginPreview(rect, GUIStyle.none);
+                previewRender.camera.fieldOfView = 90;
                 previewRender.camera.farClipPlane = 10;
-                previewRender.camera.transform.position = new Vector3(0, 0, -5);
+                previewRender.camera.nearClipPlane = 0.01f;
+                previewRender.camera.transform.position = new Vector3(0, 0, -mesh.bounds.extents.magnitude * 1.2f);
                 previewRender.camera.clearFlags = CameraClearFlags.SolidColor;
                 var drag = Vector2.zero;
                 if (Event.current.type == EventType.MouseDrag)
@@ -71,8 +74,9 @@ namespace MomomaAssets
                     renderGO = new GameObject();
                     renderGO.hideFlags = HideFlags.HideAndDontSave;
                 }
-                renderGO.transform.RotateAround(centerPos, Vector3.up, -drag.x);
-                renderGO.transform.RotateAround(centerPos, Vector3.right, -drag.y);
+                renderGO.transform.Rotate(Vector3.up, -drag.x);
+                renderGO.transform.Rotate(Vector3.right, -drag.y);
+                renderGO.transform.position = renderGO.transform.rotation * centerPos;
                 previewRender.DrawMesh(mesh, renderGO.transform.position, renderGO.transform.rotation, material, 0);
                 previewRender.camera.Render();
                 previewRender.EndAndDrawPreview(rect);
@@ -90,13 +94,26 @@ namespace MomomaAssets
                 srcMesh = skinned.sharedMesh;
                 material = skinned.sharedMaterial;
                 var srcVertices = srcMesh.vertices;
+                var length = srcVertices.Length;
+                var convertIndices = Enumerable.Repeat<int>(-1, length).ToArray();
+                for(var i = 0; i < length; ++i)
+                {
+                    if (convertIndices[i] > -1)
+                        continue;
+                    var vector = srcVertices[i];
+                    for(var j = i + 1; j < length; ++j)
+                    {
+                        if (vector == srcVertices[j])
+                            convertIndices[j] = i;
+                    }
+                }
                 for (var i = 0; i < srcMesh.subMeshCount; ++i)
                 {
                     var indices = new List<int>();
                     srcMesh.GetTriangles(indices, i);
                     while (indices.Count > 0)
                     {
-                        adjacentTriangles.Insert(0, new AdjacentTriangle(indices[0], indices[1], indices[2]));
+                        adjacentTriangles.Insert(0, new AdjacentTriangle(indices[0], indices[1], indices[2], convertIndices));
                         indices.RemoveRange(0, 3);
                         bool again;
                         do
@@ -121,9 +138,11 @@ namespace MomomaAssets
         {
             readonly HashSet<(int, int)> lines = new HashSet<(int, int)>();
             internal readonly Queue<int> triangles = new Queue<int>();
+            readonly int[] convertIndices;
 
-            internal AdjacentTriangle(int index0, int index1, int index2)
+            internal AdjacentTriangle(int index0, int index1, int index2, int[] convertIndices)
             {
+                this.convertIndices = convertIndices;
                 lines.Add(SortIndex(index0, index1));
                 lines.Add(SortIndex(index1, index2));
                 lines.Add(SortIndex(index2, index0));
@@ -134,13 +153,15 @@ namespace MomomaAssets
 
             (int, int) SortIndex(int i, int j)
             {
+                i = convertIndices[i] > -1 ? convertIndices[i] : i;
+                j = convertIndices[j] > -1 ? convertIndices[j] : j;
                 return i < j ? (i, j) : (j, i);
             }
 
             internal bool AddTriangle(int index0, int index1, int index2)
             {
                 var newLines = new (int, int)[] { SortIndex(index0, index1), SortIndex(index1, index2), SortIndex(index2, index0) };
-                if (lines.Contains(newLines[0]))
+                if (lines.Remove(newLines[0]))
                 {
                     lines.Add(newLines[1]);
                     lines.Add(newLines[2]);
@@ -149,7 +170,7 @@ namespace MomomaAssets
                     triangles.Enqueue(index2);
                     return true;
                 }
-                else if (lines.Contains(newLines[1]))
+                else if (lines.Remove(newLines[1]))
                 {
                     lines.Add(newLines[0]);
                     lines.Add(newLines[2]);
@@ -158,7 +179,7 @@ namespace MomomaAssets
                     triangles.Enqueue(index2);
                     return true;
                 }
-                else if (lines.Contains(newLines[2]))
+                else if (lines.Remove(newLines[2]))
                 {
                     lines.Add(newLines[0]);
                     lines.Add(newLines[1]);
