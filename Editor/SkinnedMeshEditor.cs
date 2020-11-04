@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
@@ -10,18 +11,32 @@ namespace MomomaAssets
     public class SkinnedMeshEditor : EditorWindow
     {
         GameObject rootObj;
-        List<AdjacentTriangle> adjacentTriangles;
-        Vector2 scrollPos = Vector2.zero;
         PreviewRenderUtility previewRender;
-        Mesh mesh, srcMesh;
-        Material material;
-        GameObject renderGO;
-        int meshIndex;
+        List<GameObject> renderGOs;
+        Vector3 centerPos;
+        Stack<GameObject> inactiveGOs;
 
         [MenuItem("MomomaTools/SkinnedMeshEditor")]
         static void ShowWindow()
         {
             EditorWindow.GetWindow<SkinnedMeshEditor>("SkinnedMeshEditor");
+        }
+
+        void OnEnable()
+        {
+            previewRender = new PreviewRenderUtility();
+            previewRender.camera.fieldOfView = 30f;
+            previewRender.camera.farClipPlane = 100f;
+            previewRender.camera.nearClipPlane = 0.1f;
+            previewRender.camera.clearFlags = CameraClearFlags.SolidColor;
+            ResetCamera();
+        }
+
+        void OnDisable()
+        {
+            previewRender?.Cleanup();
+            previewRender = null;
+            ResetRenderGameObjects();
         }
 
         void OnGUI()
@@ -37,100 +52,200 @@ namespace MomomaAssets
             }
             if (GUILayout.Button("Split"))
             {
+                ResetRenderGameObjects();
                 SplitSkinnedMeshRenderers(skinnedMRs);
+                ResetCamera();
+                inactiveGOs = new Stack<GameObject>();
             }
-            if (adjacentTriangles == null || adjacentTriangles.Count < 1)
-                return;
-            EditorGUI.BeginChangeCheck();
-            meshIndex = EditorGUILayout.IntSlider(meshIndex, 0, adjacentTriangles.Count - 1);
-            if (EditorGUI.EndChangeCheck())
+            using (new EditorGUILayout.HorizontalScope())
             {
-                mesh = new Mesh();
-                mesh.vertices = srcMesh.vertices;
-                mesh.uv = srcMesh.uv;
-                mesh.triangles = adjacentTriangles[meshIndex].triangles.ToArray();
-                MeshUtility.Optimize(mesh);
-                mesh.RecalculateBounds();
-            }
-            if (mesh)
-            {
-                if (previewRender == null)
-                    previewRender = new PreviewRenderUtility();
-                var rect = new Rect(80, 80, 512, 512);
-                var centerPos = -mesh.bounds.center;
+                GUILayout.FlexibleSpace();
+
+                var rect = GUILayoutUtility.GetRect(512f, 512f);
                 previewRender.BeginPreview(rect, GUIStyle.none);
-                previewRender.camera.fieldOfView = 90;
-                previewRender.camera.farClipPlane = 10;
-                previewRender.camera.nearClipPlane = 0.01f;
-                previewRender.camera.transform.position = new Vector3(0, 0, -mesh.bounds.extents.magnitude * 1.2f);
-                previewRender.camera.clearFlags = CameraClearFlags.SolidColor;
-                var drag = Vector2.zero;
-                if (Event.current.type == EventType.MouseDrag)
+                if (rect.Contains(Event.current.mousePosition))
                 {
-                    drag = Event.current.delta;
+                    if (Event.current.type == EventType.MouseDrag && Event.current.button == 1)
+                    {
+                        var drag = Event.current.delta;
+                        if (drag != Vector2.zero)
+                        {
+                            previewRender.camera.transform.RotateAround(centerPos, previewRender.camera.transform.rotation * Vector3.up, drag.x);
+                            previewRender.camera.transform.RotateAround(centerPos, previewRender.camera.transform.rotation * Vector3.right, drag.y);
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.MouseDrag && Event.current.button == 2)
+                    {
+                        var drag = Event.current.delta;
+                        if (drag != Vector2.zero)
+                        {
+                            drag.x *= -1f;
+                            var deltaPos = previewRender.camera.transform.rotation * drag * 0.002f;
+                            deltaPos.x = Mathf.Clamp(deltaPos.x + centerPos.x, -1f, 1f) - centerPos.x;
+                            deltaPos.y = Mathf.Clamp(deltaPos.y + centerPos.y, -1f, 1f) - centerPos.y;
+                            deltaPos.z = Mathf.Clamp(deltaPos.z + centerPos.z, -1f, 1f) - centerPos.z;
+                            centerPos += deltaPos;
+                            previewRender.camera.transform.position += deltaPos;
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.ScrollWheel)
+                    {
+                        var scroll = Event.current.delta.y;
+                        if (scroll != 0)
+                        {
+                            var cameraPos = previewRender.camera.transform.position - centerPos;
+                            previewRender.camera.transform.position = centerPos + cameraPos.normalized * Mathf.Clamp(cameraPos.magnitude + scroll * 0.1f, 0.1f, 5.0f);
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+                    {
+                        var screenPoint = Event.current.mousePosition - rect.min;
+                        screenPoint *= new Vector2(previewRender.camera.pixelWidth, previewRender.camera.pixelHeight) / rect.size;
+                        screenPoint.y = previewRender.camera.pixelHeight - screenPoint.y;
+                        var ray = previewRender.camera.ScreenPointToRay(screenPoint);
+                        var physScene = PhysicsSceneExtensions.GetPhysicsScene(renderGOs[0].scene);
+                        RaycastHit hitInfo;
+                        physScene.Raycast(ray.origin, ray.direction, out hitInfo, 10f);
+                        if (hitInfo.collider)
+                        {
+                            hitInfo.collider.gameObject.SetActive(false);
+                            inactiveGOs.Push(hitInfo.collider.gameObject);
+                            Repaint();
+                        }
+                    }
                 }
-                if (renderGO == null)
-                {
-                    renderGO = new GameObject();
-                    renderGO.hideFlags = HideFlags.HideAndDontSave;
-                }
-                renderGO.transform.Rotate(Vector3.up, -drag.x);
-                renderGO.transform.Rotate(Vector3.right, -drag.y);
-                renderGO.transform.position = renderGO.transform.rotation * centerPos;
-                previewRender.DrawMesh(mesh, renderGO.transform.position, renderGO.transform.rotation, material, 0);
                 previewRender.camera.Render();
                 previewRender.EndAndDrawPreview(rect);
-                if (drag != Vector2.zero)
-                    Repaint();
+
+                GUILayout.FlexibleSpace();
             }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+
+                using (new EditorGUI.DisabledGroupScope(inactiveGOs == null || inactiveGOs.Count == 0))
+                {
+                    if (GUILayout.Button("Undo"))
+                    {
+                        var undoGO = inactiveGOs.Pop();
+                        undoGO.SetActive(true);
+                    }
+                }
+
+                if (GUILayout.Button("Reset"))
+                {
+                    foreach (var go in renderGOs)
+                        foreach (Transform tr in go.transform)
+                            tr.gameObject.SetActive(true);
+                }
+
+                GUILayout.FlexibleSpace();
+            }
+        }
+
+        void ResetCamera()
+        {
+            previewRender.camera.transform.position = new Vector3(0, 0, 5f);
+            previewRender.camera.transform.rotation = Quaternion.Euler(0, 180f, 0);
+            centerPos = Vector3.zero;
+        }
+
+        void ResetRenderGameObjects()
+        {
+            if (renderGOs != null)
+            {
+                foreach (var go in renderGOs)
+                    DestroyImmediate(go);
+            }
+            renderGOs = new List<GameObject>();
         }
 
         void SplitSkinnedMeshRenderers(SkinnedMeshRenderer[] skinnedMRs)
         {
+            var bounds = new Bounds();
+            foreach (var skinned in skinnedMRs)
+                bounds.Encapsulate(skinned.bounds);
             foreach (var skinned in skinnedMRs)
             {
-                adjacentTriangles = new List<AdjacentTriangle>();
-                //var bones = skinned.bones;
-                srcMesh = skinned.sharedMesh;
-                material = skinned.sharedMaterial;
+                var adjacentTriangles = new List<AdjacentTriangle>();
+                var srcMesh = skinned.sharedMesh;
+
                 var srcVertices = srcMesh.vertices;
                 var length = srcVertices.Length;
-                var convertIndices = Enumerable.Repeat<int>(-1, length).ToArray();
-                for(var i = 0; i < length; ++i)
+                var convertIndices = Enumerable.Repeat(-1, length).ToArray();
+                for (var i = 0; i < length; ++i)
                 {
                     if (convertIndices[i] > -1)
                         continue;
-                    var vector = srcVertices[i];
-                    for(var j = i + 1; j < length; ++j)
+                    convertIndices[i] = i;
+                    var vertex = srcVertices[i];
+                    var index = i + 1;
+                    while (index < length && (index = Array.IndexOf(srcVertices, vertex, index)) > -1)
                     {
-                        if (vector == srcVertices[j])
-                            convertIndices[j] = i;
+                        convertIndices[index] = i;
+                        ++index;
                     }
                 }
                 for (var i = 0; i < srcMesh.subMeshCount; ++i)
                 {
                     var indices = new List<int>();
                     srcMesh.GetTriangles(indices, i);
-                    while (indices.Count > 0)
+                    var maxCount = indices.Count;
+                    try
                     {
-                        adjacentTriangles.Insert(0, new AdjacentTriangle(indices[0], indices[1], indices[2], convertIndices));
-                        indices.RemoveRange(0, 3);
-                        bool again;
-                        do
+                        while (indices.Count > 0)
                         {
-                            again = false;
-                            for (var j = 0; j < indices.Count; j += 3)
+                            EditorUtility.DisplayProgressBar("Converting...", srcMesh.name, 1f - 1f * indices.Count / maxCount);
+                            adjacentTriangles.Insert(0, new AdjacentTriangle(indices[0], indices[1], indices[2], convertIndices));
+                            indices.RemoveRange(0, 3);
+                            bool again;
+                            do
                             {
-                                if (adjacentTriangles[0].AddTriangle(indices[j], indices[j + 1], indices[j + 2]))
+                                again = false;
+                                for (var j = 0; j < indices.Count; j += 3)
                                 {
-                                    indices.RemoveRange(j, 3);
-                                    again = true;
+                                    if (adjacentTriangles[0].AddTriangle(indices[j], indices[j + 1], indices[j + 2]))
+                                    {
+                                        indices.RemoveRange(j, 3);
+                                        again = true;
+                                    }
                                 }
                             }
+                            while (again);
                         }
-                        while (again);
+                    }
+                    finally
+                    {
+                        EditorUtility.ClearProgressBar();
                     }
                 }
+                var meshes = new Mesh[adjacentTriangles.Count];
+                for (var i = 0; i < meshes.Length; ++i)
+                {
+                    var tempMesh = Instantiate(srcMesh);
+                    tempMesh.triangles = adjacentTriangles[i].triangles.ToArray();
+                    meshes[i] = tempMesh;
+                }
+                var renderGO = new GameObject();
+                renderGOs.Add(renderGO);
+                renderGO.hideFlags = HideFlags.HideAndDontSave;
+                previewRender.AddSingleGO(renderGO);
+                var material = skinned.sharedMaterial;
+                foreach (var mesh in meshes)
+                {
+                    var meshGO = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                    meshGO.transform.parent = renderGO.transform;
+                    meshGO.GetComponent<MeshFilter>().sharedMesh = mesh;
+                    meshGO.GetComponent<MeshRenderer>().sharedMaterial = material;
+                    meshGO.GetComponent<MeshCollider>().sharedMesh = mesh;
+                }
+                renderGO.transform.localPosition = skinned.transform.localPosition - bounds.center;
+                renderGO.transform.localRotation = skinned.transform.localRotation;
+                renderGO.transform.localScale = skinned.transform.localScale;
             }
         }
 
@@ -138,29 +253,29 @@ namespace MomomaAssets
         {
             readonly HashSet<(int, int)> lines = new HashSet<(int, int)>();
             internal readonly Queue<int> triangles = new Queue<int>();
-            readonly int[] convertIndices;
+            readonly IList<int> convertIndices;
 
-            internal AdjacentTriangle(int index0, int index1, int index2, int[] convertIndices)
+            internal AdjacentTriangle(int index0, int index1, int index2, IList<int> convertIndices)
             {
                 this.convertIndices = convertIndices;
-                lines.Add(SortIndex(index0, index1));
-                lines.Add(SortIndex(index1, index2));
-                lines.Add(SortIndex(index2, index0));
+                lines.Add(GetLine(index0, index1));
+                lines.Add(GetLine(index1, index2));
+                lines.Add(GetLine(index2, index0));
                 triangles.Enqueue(index0);
                 triangles.Enqueue(index1);
                 triangles.Enqueue(index2);
             }
 
-            (int, int) SortIndex(int i, int j)
+            (int, int) GetLine(int i, int j)
             {
-                i = convertIndices[i] > -1 ? convertIndices[i] : i;
-                j = convertIndices[j] > -1 ? convertIndices[j] : j;
+                i = convertIndices[i];
+                j = convertIndices[j];
                 return i < j ? (i, j) : (j, i);
             }
 
             internal bool AddTriangle(int index0, int index1, int index2)
             {
-                var newLines = new (int, int)[] { SortIndex(index0, index1), SortIndex(index1, index2), SortIndex(index2, index0) };
+                var newLines = new (int, int)[] { GetLine(index0, index1), GetLine(index1, index2), GetLine(index2, index0) };
                 if (lines.Remove(newLines[0]))
                 {
                     lines.Add(newLines[1]);
