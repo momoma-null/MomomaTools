@@ -20,12 +20,13 @@ namespace MomomaAssets
         static Type ModelExporterType = Type.GetType(ModelExporterTypeName);
         static Type ExportModelSettingsSerializeType = Type.GetType(ExportModelSettingsSerializeTypeName);
 
-        GameObject rootObj;
+        Animator rootAnimator;
         PreviewRenderUtility previewRender;
         List<GameObject> renderGOs;
         Vector3 centerPos;
         Stack<GameObject> inactiveGOs;
         Bounds bounds;
+        GameObject rootObjCopy;
 
         [MenuItem("MomomaTools/SkinnedMeshEditor")]
         static void ShowWindow()
@@ -80,13 +81,15 @@ namespace MomomaAssets
                 }
                 return;
             }
-            rootObj = EditorGUILayout.ObjectField(rootObj, typeof(GameObject), true) as GameObject;
-            if (!rootObj)
-                return;
-            var skinnedMRs = rootObj.GetComponentsInChildren<SkinnedMeshRenderer>();
-            if (skinnedMRs.Length == 0)
+            rootAnimator = EditorGUILayout.ObjectField(rootAnimator, typeof(Animator), true) as Animator;
+            if (!rootAnimator)
             {
-                EditorGUILayout.HelpBox("Select GameObject including SkinnedMeshRenderer.", MessageType.Info);
+                EditorGUILayout.HelpBox("Select Avatar Object.", MessageType.Info);
+                return;
+            }
+            if (rootAnimator.GetComponentsInChildren<SkinnedMeshRenderer>().Length == 0)
+            {
+                EditorGUILayout.HelpBox("Select Object including SkinnedMeshRenderer.", MessageType.Info);
                 return;
             }
             if (GUILayout.Button("Split"))
@@ -242,10 +245,14 @@ namespace MomomaAssets
 
         void MergeAndExportSkinnedMeshes()
         {
-            var path = AssetDatabase.GetAssetPath(rootObj.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh);
+            var path = AssetDatabase.GetAssetPath(rootAnimator.GetComponentInChildren<SkinnedMeshRenderer>().sharedMesh);
             path = Path.ChangeExtension(path, ".fbx");
             path = AssetDatabase.GenerateUniqueAssetPath(path);
-            var exportGO = new GameObject(rootObj.name);
+            var exportGO = rootObjCopy;
+            var offset = exportGO.transform.position;
+            exportGO.transform.position = Vector3.zero;
+            exportGO.transform.rotation = Quaternion.identity;
+            exportGO.transform.DetachChildren();
             try
             {
                 EditorUtility.DisplayProgressBar("Export Meshes", "Preparing.", 0);
@@ -272,8 +279,6 @@ namespace MomomaAssets
                             }
                         }
                     }
-                    var offset = bMeshes.Key[0].root.position;
-                    bMeshes.Key[0].root.position = Vector3.zero;
                     var combineInstances = new CombineInstance[materialGropu.Count()];
                     var subMeshIndex = 0;
                     foreach (var mMeshes in materialGropu)
@@ -288,8 +293,8 @@ namespace MomomaAssets
                             EditorUtility.DisplayProgressBar("Export Meshes", "Making combine instances.", smCombineIndex / max);
                             if (bindposes == null)
                                 bindposes = r.sharedMesh.bindposes;
-                            r.transform.position -= offset;
                             var srcMesh = r.sharedMesh;
+                            r.transform.position -= offset;
                             subMeshCombine[smCombineIndex].mesh = srcMesh;
                             subMeshCombine[smCombineIndex].transform = r.transform.localToWorldMatrix;
                             r.transform.Reset();
@@ -342,7 +347,16 @@ namespace MomomaAssets
                         bsCombines.ForEach(c => DestroyImmediate(c.mesh));
                         ++keyIndex;
                     }
-                    bMeshes.Key[0].parent = exportGO.transform;
+                    var tempTf = bMeshes.Key[0];
+                    while(tempTf.parent)
+                    {
+                        var p = tempTf.parent;
+                        tempTf.parent = null;
+                        p.Reset();
+                        tempTf.parent = p;
+                        tempTf = p;
+                    }
+                    tempTf.parent = exportGO.transform;
                     var transformQueue = new Queue<(Vector3, Quaternion)>();
                     Array.ForEach(bMeshes.Key, t => transformQueue.Enqueue((t.position, t.rotation)));
                     Array.ForEach(bMeshes.Key, t => t.localScale = Vector3.one);
@@ -394,9 +408,9 @@ namespace MomomaAssets
             finally
             {
                 EditorUtility.ClearProgressBar();
-                ResetRenderGameObjects();
                 Array.ForEach(exportGO.GetComponentsInChildren<SkinnedMeshRenderer>(), r => DestroyImmediate(r.sharedMesh));
                 DestroyImmediate(exportGO);
+                ResetRenderGameObjects();
             }
         }
 
@@ -419,14 +433,14 @@ namespace MomomaAssets
 
         void SplitSkinnedMeshRenderers()
         {
-            var rootObjCopy = Instantiate(rootObj);
+            rootObjCopy = Instantiate(rootAnimator.gameObject);
             var skinnedMRs = rootObjCopy.GetComponentsInChildren<SkinnedMeshRenderer>();
+            rootObjCopy.transform.position = Vector3.zero;
+            rootObjCopy.transform.rotation = Quaternion.identity;
             bounds = new Bounds();
             foreach (var skinned in skinnedMRs)
                 bounds.Encapsulate(skinned.bounds);
-            rootObjCopy.hideFlags = HideFlags.HideAndDontSave;
             rootObjCopy.transform.position = -bounds.center;
-            rootObjCopy.transform.rotation = Quaternion.identity;
             bounds.center = Vector3.zero;
             previewRender.AddSingleGO(rootObjCopy);
             foreach (var skinned in skinnedMRs)
