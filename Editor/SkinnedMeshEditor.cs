@@ -20,13 +20,13 @@ namespace MomomaAssets
         static Type ModelExporterType = Type.GetType(ModelExporterTypeName);
         static Type ExportModelSettingsSerializeType = Type.GetType(ExportModelSettingsSerializeTypeName);
 
-        Animator rootAnimator;
         PreviewRenderUtility previewRender;
         List<GameObject> renderGOs;
-        Vector3 centerPos;
         Stack<GameObject> inactiveGOs;
-        Bounds bounds;
+        Animator rootAnimator;
         GameObject rootObjCopy;
+        Vector3 centerPos;
+        Bounds bounds;
 
         [MenuItem("MomomaTools/SkinnedMeshEditor")]
         static void ShowWindow()
@@ -36,15 +36,13 @@ namespace MomomaAssets
 
         void OnEnable()
         {
-            previewRender = new PreviewRenderUtility();
+            InitializeObjects();
             ResetCamera();
         }
 
         void OnDisable()
         {
-            ResetRenderGameObjects();
-            previewRender?.Cleanup();
-            previewRender = null;
+            ClearObjects();
         }
 
         void Update()
@@ -81,6 +79,7 @@ namespace MomomaAssets
                 }
                 return;
             }
+
             rootAnimator = EditorGUILayout.ObjectField(rootAnimator, typeof(Animator), true) as Animator;
             if (!rootAnimator)
             {
@@ -92,14 +91,23 @@ namespace MomomaAssets
                 EditorGUILayout.HelpBox("Select Object including SkinnedMeshRenderer.", MessageType.Info);
                 return;
             }
-            if (GUILayout.Button("Split"))
+
+            using (new EditorGUILayout.HorizontalScope())
             {
-                ResetRenderGameObjects();
-                SplitSkinnedMeshRenderers();
-                ResetCamera();
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Split"))
+                {
+                    ClearObjects();
+                    InitializeObjects();
+                    SplitSkinnedMeshRenderers();
+                    ResetCamera();
+                }
+                GUILayout.FlexibleSpace();
             }
-            if (renderGOs == null || renderGOs.Count == 0)
+
+            if (renderGOs.Count == 0)
                 return;
+
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
@@ -110,7 +118,6 @@ namespace MomomaAssets
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
-
                 using (new EditorGUI.DisabledGroupScope(inactiveGOs == null || inactiveGOs.Count == 0))
                 {
                     if (GUILayout.Button("Undo"))
@@ -118,7 +125,6 @@ namespace MomomaAssets
                         UndoInactiveGO();
                     }
                 }
-
                 if (GUILayout.Button("Reset"))
                 {
                     while (inactiveGOs.Count > 0)
@@ -126,28 +132,29 @@ namespace MomomaAssets
                         UndoInactiveGO();
                     }
                 }
-
                 GUILayout.FlexibleSpace();
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
-
                 if (GUILayout.Button("Export"))
                 {
                     MergeAndExportSkinnedMeshes();
                 }
-
                 GUILayout.FlexibleSpace();
             }
         }
 
+        void PushInactiveGO(GameObject go)
+        {
+            go.SetActive(false);
+            inactiveGOs.Push(go);
+        }
+
         void UndoInactiveGO()
         {
-            var undoGO = inactiveGOs.Pop();
-            undoGO.GetComponent<Renderer>().enabled = true;
-            undoGO.GetComponent<Collider>().enabled = true;
+            inactiveGOs.Pop().SetActive(true);
         }
 
         void ResetCamera()
@@ -158,18 +165,28 @@ namespace MomomaAssets
             centerPos = Vector3.zero;
         }
 
-        void ResetRenderGameObjects()
+        void ClearObjects()
         {
             if (renderGOs != null)
             {
                 foreach (var go in renderGOs)
                 {
+                    DestroyImmediate(go.GetComponent<SkinnedMeshRenderer>().sharedMesh);
                     DestroyImmediate(go.GetComponent<MeshCollider>().sharedMesh);
                     DestroyImmediate(go);
                 }
             }
+            renderGOs.Clear();
+            inactiveGOs.Clear();
+            previewRender?.Cleanup();
+            previewRender = null;
+        }
+
+        void InitializeObjects()
+        {
             renderGOs = new List<GameObject>();
             inactiveGOs = new Stack<GameObject>();
+            previewRender = new PreviewRenderUtility();
         }
 
         void RendererPreview()
@@ -227,9 +244,7 @@ namespace MomomaAssets
                     physScene.Raycast(ray.origin, ray.direction, out hitInfo, 10f);
                     if (hitInfo.collider)
                     {
-                        hitInfo.collider.GetComponent<Renderer>().enabled = false;
-                        hitInfo.collider.enabled = false;
-                        inactiveGOs.Push(hitInfo.collider.gameObject);
+                        PushInactiveGO(hitInfo.collider.transform.root.gameObject);
                         Repaint();
                     }
                 };
@@ -253,6 +268,7 @@ namespace MomomaAssets
             exportGO.transform.position = Vector3.zero;
             exportGO.transform.rotation = Quaternion.identity;
             exportGO.transform.DetachChildren();
+            exportGO.transform.localScale = Vector3.one;
             try
             {
                 EditorUtility.DisplayProgressBar("Export Meshes", "Preparing.", 0);
@@ -273,6 +289,7 @@ namespace MomomaAssets
                         {
                             for (var i = 0; i < r.sharedMesh.blendShapeCount; ++i)
                             {
+                                r.SetBlendShapeWeight(i, 0f);
                                 var blendShapeName = r.sharedMesh.GetBlendShapeName(i);
                                 if (!blendShapeDict.ContainsKey(blendShapeName))
                                     blendShapeDict.Add(blendShapeName, new List<CombineInstance>());
@@ -283,6 +300,8 @@ namespace MomomaAssets
                     var subMeshIndex = 0;
                     foreach (var mMeshes in materialGropu)
                     {
+                        if (mMeshes.Count() == 0)
+                            continue;
                         var subMeshCombine = new CombineInstance[mMeshes.Count()];
                         var smCombineIndex = 0;
                         max = subMeshCombine.Length;
@@ -291,26 +310,29 @@ namespace MomomaAssets
                         foreach (var r in mMeshes)
                         {
                             EditorUtility.DisplayProgressBar("Export Meshes", "Making combine instances.", smCombineIndex / max);
-                            if (bindposes == null)
-                                bindposes = r.sharedMesh.bindposes;
                             var srcMesh = r.sharedMesh;
-                            r.transform.position -= offset;
-                            subMeshCombine[smCombineIndex].mesh = srcMesh;
-                            subMeshCombine[smCombineIndex].transform = r.transform.localToWorldMatrix;
-                            r.transform.Reset();
+                            if (bindposes == null)
+                                bindposes = srcMesh.bindposes;
+                            var srcBakedMesh = new Mesh();
+                            r.BakeMesh(srcBakedMesh);
+                            srcBakedMesh.bindposes = srcMesh.bindposes;
+                            srcBakedMesh.boneWeights = srcMesh.boneWeights;
+                            subMeshCombine[smCombineIndex].mesh = srcBakedMesh;
+                            subMeshCombine[smCombineIndex].transform = Matrix4x4.identity;
                             foreach (var key in blendShapeDict.Keys)
                             {
-                                var bsMesh = Instantiate(srcMesh);
+                                Mesh bsMesh;
                                 var blendShapeIndex = srcMesh.GetBlendShapeIndex(key);
                                 if (blendShapeIndex > -1)
                                 {
+                                    bsMesh = new Mesh();
                                     r.SetBlendShapeWeight(blendShapeIndex, 100f);
                                     r.BakeMesh(bsMesh);
                                     r.SetBlendShapeWeight(blendShapeIndex, 0f);
                                 }
                                 else
                                 {
-                                    r.BakeMesh(bsMesh);
+                                    bsMesh = Instantiate(srcBakedMesh);
                                 }
                                 var bsCombine = new CombineInstance();
                                 bsCombine.mesh = bsMesh;
@@ -326,6 +348,7 @@ namespace MomomaAssets
                         ++subMeshIndex;
                     }
                     var outMesh = new Mesh();
+                    outMesh.MarkDynamic();
                     outMesh.CombineMeshes(combineInstances, false, false);
                     Array.ForEach(combineInstances, c => DestroyImmediate(c.mesh));
                     var outVertices = outMesh.vertices;
@@ -348,7 +371,7 @@ namespace MomomaAssets
                         ++keyIndex;
                     }
                     var tempTf = bMeshes.Key[0];
-                    while(tempTf.parent)
+                    while (tempTf.parent)
                     {
                         var p = tempTf.parent;
                         tempTf.parent = null;
@@ -362,13 +385,11 @@ namespace MomomaAssets
                     Array.ForEach(bMeshes.Key, t => t.localScale = Vector3.one);
                     Array.ForEach(bMeshes.Key, t => (t.position, t.rotation) = transformQueue.Dequeue());
                     outMesh.bindposes = bMeshes.Key.Select(t => t.worldToLocalMatrix).ToArray();
+                    EditorUtility.DisplayProgressBar("Export Meshes", "Reordering bone index.", 0f);
                     var bindPosesCount = bindposes.Length;
-                    var newWeights = new List<BoneWeight>();
-                    max = outMesh.boneWeights.Length;
-                    var weightIndex = 0;
+                    var newWeights = new Queue<BoneWeight>();
                     foreach (var weight in outMesh.boneWeights)
                     {
-                        EditorUtility.DisplayProgressBar("Export Meshes", "Reordering bone index.", weightIndex / max);
                         var newWeight = weight;
                         if (weight.boneIndex0 > -1)
                             newWeight.boneIndex0 %= bindPosesCount;
@@ -378,11 +399,18 @@ namespace MomomaAssets
                             newWeight.boneIndex2 %= bindPosesCount;
                         if (weight.boneIndex3 > -1)
                             newWeight.boneIndex3 %= bindPosesCount;
-                        newWeights.Add(newWeight);
-                        ++weightIndex;
+                        newWeights.Enqueue(newWeight);
                     }
-                    EditorUtility.DisplayProgressBar("Export Meshes", "Export assets.", 1f);
+                    EditorUtility.DisplayProgressBar("Export Meshes", "Normalize normals.", 0f);
                     outMesh.boneWeights = newWeights.ToArray();
+                    var newNormals = new Queue<Vector3>();
+                    foreach (var normal in outMesh.normals)
+                    {
+                        newNormals.Enqueue(normal.normalized);
+                    }
+                    outMesh.normals = newNormals.ToArray();
+                    EditorUtility.DisplayProgressBar("Export Meshes", "Export assets.", 1f);
+                    MeshUtility.Optimize(outMesh);
                     var newMeshGO = new GameObject("Mesh" + outMeshIndex);
                     var newSkinned = newMeshGO.AddComponent<SkinnedMeshRenderer>();
                     newSkinned.sharedMaterials = materials.ToArray();
@@ -398,7 +426,7 @@ namespace MomomaAssets
                 var importer = AssetImporter.GetAtPath(path) as ModelImporter;
                 foreach (var m in allMaterials)
                     importer.AddRemap(new AssetImporter.SourceAssetIdentifier(m), m);
-                importer.importBlendShapeNormals = ModelImporterNormals.Import;
+                importer.importBlendShapeNormals = ModelImporterNormals.None;
                 importer.SaveAndReimport();
             }
             catch
@@ -408,15 +436,14 @@ namespace MomomaAssets
             finally
             {
                 EditorUtility.ClearProgressBar();
-                Array.ForEach(exportGO.GetComponentsInChildren<SkinnedMeshRenderer>(), r => DestroyImmediate(r.sharedMesh));
                 DestroyImmediate(exportGO);
-                ResetRenderGameObjects();
+                ClearObjects();
+                InitializeObjects();
             }
         }
 
         class BonesEqualityComparer : IEqualityComparer<Transform[]>
         {
-
             public bool Equals(Transform[] x, Transform[] y)
             {
                 return x.SequenceEqual(y);
@@ -428,7 +455,6 @@ namespace MomomaAssets
                 Array.ForEach(transforms, t => hash ^= t.GetHashCode());
                 return hash;
             }
-
         }
 
         void SplitSkinnedMeshRenderers()
@@ -493,15 +519,15 @@ namespace MomomaAssets
                             mesh.hideFlags = HideFlags.HideAndDontSave;
                             mesh.triangles = adjacentTriangles[0].triangles.ToArray();
                             var renderGO = new GameObject();
+                            renderGO.hideFlags = HideFlags.DontSave;
                             var newSkinned = renderGO.AddComponent<SkinnedMeshRenderer>();
                             newSkinned.sharedMaterial = skinned.sharedMaterials[i];
                             newSkinned.bones = skinned.bones;
                             newSkinned.sharedMesh = mesh;
-                            renderGO.AddComponent<MeshCollider>().sharedMesh = mesh;
-                            renderGO.hideFlags = HideFlags.DontSave;
-                            renderGO.transform.position = skinned.transform.position;
-                            renderGO.transform.rotation = skinned.transform.rotation;
-                            renderGO.transform.localScale = skinned.transform.localScale;
+                            var bakedMesh = new Mesh();
+                            newSkinned.BakeMesh(bakedMesh);
+                            bakedMesh.hideFlags = HideFlags.HideAndDontSave;
+                            renderGO.AddComponent<MeshCollider>().sharedMesh = bakedMesh;
                             renderGOs.Add(renderGO);
                             previewRender.AddSingleGO(renderGO);
                         }
@@ -512,7 +538,13 @@ namespace MomomaAssets
                     }
                 }
             }
-            Array.ForEach(Array.FindAll(rootObjCopy.GetComponentsInChildren<Component>(true), c => !(c is Transform)), c => DestroyImmediate(c));
+
+            Array.ForEach(rootObjCopy.GetComponentsInChildren<Transform>(true), t => UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform)));
+        }
+
+        static Vector3 InverseScale(Vector3 s)
+        {
+            return new Vector3(1f / s.x, 1f / s.y, 1f / s.z);
         }
 
         class AdjacentTriangle
