@@ -16,13 +16,18 @@ namespace MomomaAssets
         const string ModelExporterTypeName = "UnityEditor.Formats.Fbx.Exporter.ModelExporter, Unity.Formats.Fbx.Editor";
         const string ExportModelSettingsSerializeTypeName = "UnityEditor.Formats.Fbx.Exporter.ExportModelSettingsSerialize, Unity.Formats.Fbx.Editor";
 
+        readonly static Color s_RangeColor = new Color(0f, 1f, 1f, 0.2f);
+        readonly static MethodInfo s_OverlapBoxMethodInfo = typeof(Physics).GetMethod("OverlapBox_Internal", BindingFlags.Static | BindingFlags.NonPublic);
+
         static AddRequest s_Request;
         static Type ModelExporterType = Type.GetType(ModelExporterTypeName);
         static Type ExportModelSettingsSerializeType = Type.GetType(ExportModelSettingsSerializeTypeName);
 
         PreviewRenderUtility previewRender;
-        List<GameObject> renderGOs;
-        Stack<GameObject> inactiveGOs;
+        Vector2 dragBeginPosition;
+        Vector2 dragEndPosition;
+        HashSet<GameObject> renderGOs;
+        Stack<HashSet<GameObject>> inactiveGOs;
         Animator rootAnimator;
         GameObject rootObjCopy;
         Vector3 centerPos;
@@ -80,16 +85,23 @@ namespace MomomaAssets
                 return;
             }
 
-            rootAnimator = EditorGUILayout.ObjectField(rootAnimator, typeof(Animator), true) as Animator;
-            if (!rootAnimator)
+            using (var changeCheck = new EditorGUI.ChangeCheckScope())
             {
-                EditorGUILayout.HelpBox("Select Avatar Object.", MessageType.Info);
-                return;
-            }
-            if (rootAnimator.GetComponentsInChildren<SkinnedMeshRenderer>().Length == 0)
-            {
-                EditorGUILayout.HelpBox("Select Object including SkinnedMeshRenderer.", MessageType.Info);
-                return;
+                rootAnimator = EditorGUILayout.ObjectField(rootAnimator, typeof(Animator), true) as Animator;
+                if (!rootAnimator)
+                {
+                    EditorGUILayout.HelpBox("Select Avatar Object.", MessageType.Info);
+                    return;
+                }
+                if (rootAnimator.GetComponentsInChildren<SkinnedMeshRenderer>().Length == 0)
+                {
+                    EditorGUILayout.HelpBox("Select Object including SkinnedMeshRenderer.", MessageType.Info);
+                    return;
+                }
+                if (changeCheck.changed)
+                {
+                    ClearObjects();
+                }
             }
 
             using (new EditorGUILayout.HorizontalScope())
@@ -146,15 +158,23 @@ namespace MomomaAssets
             }
         }
 
-        void PushInactiveGO(GameObject go)
+        void PushInactiveGO(IEnumerable<GameObject> gos)
         {
-            go.SetActive(false);
-            inactiveGOs.Push(go);
+            foreach (var go in gos)
+            {
+                go.SetActive(false);
+                renderGOs.Remove(go);
+            }
+            inactiveGOs.Push(new HashSet<GameObject>(gos));
         }
 
         void UndoInactiveGO()
         {
-            inactiveGOs.Pop().SetActive(true);
+            foreach (var go in inactiveGOs.Pop())
+            {
+                go.SetActive(true);
+                renderGOs.Add(go);
+            }
         }
 
         void ResetCamera()
@@ -163,6 +183,12 @@ namespace MomomaAssets
             previewRender.camera.transform.position = new Vector3(0, 0, Mathf.Max(bounds.size.x, bounds.size.y) * 4f);
             previewRender.camera.transform.rotation = Quaternion.Euler(0, 180f, 0);
             centerPos = Vector3.zero;
+        }
+
+        void ResetRange()
+        {
+            dragBeginPosition = Vector2.zero;
+            dragEndPosition = Vector2.zero;
         }
 
         void ClearObjects()
@@ -184,9 +210,10 @@ namespace MomomaAssets
 
         void InitializeObjects()
         {
-            renderGOs = new List<GameObject>();
-            inactiveGOs = new Stack<GameObject>();
+            renderGOs = new HashSet<GameObject>();
+            inactiveGOs = new Stack<HashSet<GameObject>>();
             previewRender = new PreviewRenderUtility();
+            ResetRange();
         }
 
         void RendererPreview()
@@ -198,6 +225,7 @@ namespace MomomaAssets
             {
                 if (Event.current.type == EventType.MouseDrag && Event.current.button == 1)
                 {
+                    ResetRange();
                     var drag = Event.current.delta;
                     if (drag != Vector2.zero)
                     {
@@ -208,6 +236,7 @@ namespace MomomaAssets
                 }
                 else if (Event.current.type == EventType.MouseDrag && Event.current.button == 2)
                 {
+                    ResetRange();
                     var drag = Event.current.delta;
                     if (drag != Vector2.zero)
                     {
@@ -233,21 +262,46 @@ namespace MomomaAssets
                         Repaint();
                     }
                 }
+                else if (Event.current.type == EventType.MouseDrag && Event.current.button == 0)
+                {
+                    dragEndPosition = Event.current.mousePosition;
+                    if (dragBeginPosition == Vector2.zero)
+                    {
+                        dragBeginPosition = dragEndPosition;
+                    }
+                    Repaint();
+                }
                 else if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
                 {
-                    var screenPoint = Event.current.mousePosition - rect.min;
-                    screenPoint *= new Vector2(previewCam.pixelWidth, previewCam.pixelHeight) / rect.size;
-                    screenPoint.y = previewCam.pixelHeight - screenPoint.y;
-                    var ray = previewCam.ScreenPointToRay(screenPoint);
-                    var physScene = PhysicsSceneExtensions.GetPhysicsScene(previewCam.scene);
-                    RaycastHit hitInfo;
-                    physScene.Raycast(ray.origin, ray.direction, out hitInfo, 10f);
-                    if (hitInfo.collider)
+                    ResetRange();
+                    dragBeginPosition = Event.current.mousePosition;
+                    dragEndPosition = dragBeginPosition;
+                }
+                else if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
+                {
+                    var endRay = MouseToRay(Event.current.mousePosition, rect, previewCam);
+                    var beginRay = MouseToRay(dragBeginPosition, rect, previewCam);
+                    var physicsScene = PhysicsSceneExtensions.GetPhysicsScene(previewCam.scene);
+                    var position = (endRay.origin + beginRay.origin) * 0.5f + 5f * endRay.direction;
+                    var rotation = Quaternion.LookRotation(endRay.direction, previewCam.transform.up);
+                    var size = previewCam.transform.InverseTransformPoint(endRay.origin) - previewCam.transform.InverseTransformPoint(beginRay.origin);
+                    size.x = Math.Abs(size.x * 0.5f);
+                    size.y = Math.Abs(size.y * 0.5f);
+                    size.z = 10f;
+                    Physics.queriesHitBackfaces = true;
+                    var cols = s_OverlapBoxMethodInfo.Invoke(null, new object[] { physicsScene, position, size, rotation, Physics.AllLayers, QueryTriggerInteraction.UseGlobal }) as Collider[];
+                    Physics.queriesHitBackfaces = false;
+                    if (cols.Length > 0)
                     {
-                        PushInactiveGO(hitInfo.collider.transform.root.gameObject);
-                        Repaint();
+                        PushInactiveGO(cols.Select(c => c.gameObject));
                     }
-                };
+                    Repaint();
+                    ResetRange();
+                }
+            }
+            else if (Event.current.type != EventType.Layout)
+            {
+                ResetRange();
             }
             if (bounds != null)
             {
@@ -256,6 +310,15 @@ namespace MomomaAssets
             }
             previewCam.Render();
             previewRender.EndAndDrawPreview(rect);
+            EditorGUI.DrawRect(new Rect(dragBeginPosition, dragEndPosition - dragBeginPosition), s_RangeColor);
+        }
+
+        static Ray MouseToRay(Vector2 mousePosition, Rect rect, Camera cam)
+        {
+            var screenPoint = mousePosition - rect.min;
+            screenPoint *= new Vector2(cam.pixelWidth, cam.pixelHeight) / rect.size;
+            screenPoint.y = cam.pixelHeight - screenPoint.y;
+            return cam.ScreenPointToRay(screenPoint);
         }
 
         void MergeAndExportSkinnedMeshes()
@@ -274,7 +337,7 @@ namespace MomomaAssets
                 EditorUtility.DisplayProgressBar("Export Meshes", "Preparing.", 0);
                 float max;
                 var allMaterials = new HashSet<Material>();
-                var skinnedMRs = renderGOs.Except(inactiveGOs).Select(go => go.GetComponent<SkinnedMeshRenderer>());
+                var skinnedMRs = renderGOs.Select(go => go.GetComponent<SkinnedMeshRenderer>());
                 var bonesGroup = skinnedMRs.GroupBy(r => r.bones, new BonesEqualityComparer());
                 var outMeshIndex = 0;
                 foreach (var bMeshes in bonesGroup)
@@ -538,8 +601,8 @@ namespace MomomaAssets
                     }
                 }
             }
-
-            Array.ForEach(rootObjCopy.GetComponentsInChildren<Transform>(true), t => UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform)));
+            foreach (var t in rootObjCopy.GetComponentsInChildren<Transform>(true))
+                UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform));
         }
 
         static Vector3 InverseScale(Vector3 s)
@@ -602,6 +665,14 @@ namespace MomomaAssets
                     return true;
                 }
                 return false;
+            }
+        }
+
+        class RangeCheckCollider : BoxCollider
+        {
+            void OnCollisionEnter(Collision other)
+            {
+                return;
             }
         }
     }
