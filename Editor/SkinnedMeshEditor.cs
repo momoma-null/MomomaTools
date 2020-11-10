@@ -132,40 +132,207 @@ namespace MomomaAssets
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
-                EditorGUI.BeginChangeCheck();
-                backgroundColor = EditorGUILayout.ColorField("Background Color", backgroundColor);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    previewRender.camera.backgroundColor = backgroundColor;
-                    Repaint();
-                }
-                GUILayout.FlexibleSpace();
-                using (new EditorGUI.DisabledGroupScope(inactiveGOs == null || inactiveGOs.Count == 0))
-                {
-                    if (GUILayout.Button("Undo"))
-                    {
-                        UndoInactiveGO();
-                    }
-                }
-                if (GUILayout.Button("Reset"))
-                {
-                    while (inactiveGOs.Count > 0)
-                    {
-                        UndoInactiveGO();
-                    }
-                }
-                GUILayout.FlexibleSpace();
-            }
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Export"))
                 {
                     MergeAndExportSkinnedMeshes();
                 }
                 GUILayout.FlexibleSpace();
             }
+        }
+
+        void InitializeObjects()
+        {
+            renderGOs = new HashSet<GameObject>();
+            inactiveGOs = new Stack<HashSet<GameObject>>();
+            previewRender = new PreviewRenderUtility();
+            previewRender.lights[0].transform.rotation = Quaternion.Euler(50f, 150f, 0f);
+            ResetRange();
+        }
+
+        void ClearObjects()
+        {
+            if (renderGOs != null)
+            {
+                foreach (var go in renderGOs)
+                {
+                    DestroyImmediate(go.GetComponent<SkinnedMeshRenderer>().sharedMesh);
+                    DestroyImmediate(go.GetComponent<MeshCollider>().sharedMesh);
+                    DestroyImmediate(go);
+                }
+            }
+            if (inactiveGOs != null)
+            {
+                foreach (var gos in inactiveGOs)
+                {
+                    foreach (var go in gos)
+                    {
+                        DestroyImmediate(go.GetComponent<SkinnedMeshRenderer>().sharedMesh);
+                        DestroyImmediate(go.GetComponent<MeshCollider>().sharedMesh);
+                        DestroyImmediate(go);
+                    }
+                }
+            }
+            renderGOs.Clear();
+            inactiveGOs.Clear();
+            previewRender?.Cleanup();
+            previewRender = null;
+        }
+
+        void RendererPreview()
+        {
+            using (new EditorGUILayout.VerticalScope())
+            {
+                var rect = GUILayoutUtility.GetRect(512f, 512f);
+                previewRender.BeginPreview(rect, GUIStyle.none);
+                var previewCam = previewRender.camera;
+                if (rect.Contains(Event.current.mousePosition))
+                {
+                    if (Event.current.type == EventType.MouseDrag && Event.current.button == 1)
+                    {
+                        ResetRange();
+                        var drag = Event.current.delta;
+                        if (drag != Vector2.zero)
+                        {
+                            previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.up, drag.x);
+                            previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.right, drag.y);
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.MouseDrag && Event.current.button == 2)
+                    {
+                        ResetRange();
+                        var drag = Event.current.delta;
+                        if (drag != Vector2.zero)
+                        {
+                            drag.x *= -1f;
+                            var limit = Mathf.Max(new float[] { bounds.extents.x, bounds.extents.y, bounds.extents.z });
+                            var deltaPos = previewCam.transform.rotation * drag * 0.002f;
+                            deltaPos.x = Mathf.Clamp(deltaPos.x + centerPos.x, -limit, limit) - centerPos.x;
+                            deltaPos.y = Mathf.Clamp(deltaPos.y + centerPos.y, -limit, limit) - centerPos.y;
+                            deltaPos.z = Mathf.Clamp(deltaPos.z + centerPos.z, -limit, limit) - centerPos.z;
+                            centerPos += deltaPos;
+                            previewCam.transform.position += deltaPos;
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.ScrollWheel)
+                    {
+                        var scroll = Event.current.delta.y;
+                        if (scroll != 0)
+                        {
+                            var cameraPos = previewCam.transform.position - centerPos;
+                            var farLimit = bounds.size.magnitude * 4f;
+                            previewCam.transform.position = centerPos + cameraPos.normalized * Mathf.Clamp(cameraPos.magnitude + scroll * 0.1f, 0.01f, farLimit);
+                            Repaint();
+                        }
+                    }
+                    else if (Event.current.type == EventType.MouseDrag && Event.current.button == 0)
+                    {
+                        dragEndPosition = Event.current.mousePosition;
+                        if (dragBeginPosition == Vector2.zero)
+                        {
+                            dragBeginPosition = dragEndPosition;
+                        }
+                        Repaint();
+                    }
+                    else if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+                    {
+                        ResetRange();
+                        dragBeginPosition = Event.current.mousePosition;
+                        dragEndPosition = dragBeginPosition;
+                    }
+                    else if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
+                    {
+                        var endRay = MouseToRay(Event.current.mousePosition, rect, previewCam);
+                        var beginRay = MouseToRay(dragBeginPosition, rect, previewCam);
+                        var physicsScene = PhysicsSceneExtensions.GetPhysicsScene(previewCam.scene);
+                        try
+                        {
+                            Physics.queriesHitBackfaces = true;
+                            if (dragBeginPosition == dragEndPosition)
+                            {
+                                RaycastHit hit;
+                                physicsScene.Raycast(endRay.origin, endRay.direction, out hit, 10f);
+                                if (hit.collider)
+                                {
+                                    PushInactiveGO(new HashSet<GameObject>() { hit.collider.gameObject });
+                                }
+                            }
+                            else
+                            {
+                                var position = (endRay.origin + beginRay.origin) * 0.5f + 5f * endRay.direction;
+                                var rotation = Quaternion.LookRotation(endRay.direction, previewCam.transform.up);
+                                var size = previewCam.transform.InverseTransformPoint(endRay.origin) - previewCam.transform.InverseTransformPoint(beginRay.origin);
+                                size.x = Math.Abs(size.x * 0.5f);
+                                size.y = Math.Abs(size.y * 0.5f);
+                                size.z = 10f;
+                                var cols = s_OverlapBoxMethodInfo.Invoke(null, new object[] { physicsScene, position, size, rotation, Physics.AllLayers, QueryTriggerInteraction.UseGlobal }) as Collider[];
+                                if (cols.Length > 0)
+                                {
+                                    PushInactiveGO(cols.Select(c => c.gameObject));
+                                }
+                            }
+                        }
+                        catch
+                        {
+                            throw;
+                        }
+                        finally
+                        {
+                            Physics.queriesHitBackfaces = false;
+                        }
+                        Repaint();
+                        ResetRange();
+                    }
+                }
+                else if (Event.current.type != EventType.Layout)
+                {
+                    ResetRange();
+                }
+                previewCam.nearClipPlane = Mathf.Sqrt(bounds.SqrDistance(previewCam.transform.position)) + 0.001f;
+                previewCam.farClipPlane = bounds.size.magnitude + previewCam.nearClipPlane;
+                previewCam.Render();
+                previewRender.EndAndDrawPreview(rect);
+
+                EditorGUI.DrawRect(new Rect(dragBeginPosition, dragEndPosition - dragBeginPosition), s_RangeColor);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUI.BeginChangeCheck();
+                    backgroundColor = EditorGUILayout.ColorField("Background Color", backgroundColor);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        previewCam.backgroundColor = backgroundColor;
+                        Repaint();
+                    }
+
+                    GUILayout.FlexibleSpace();
+
+                    using (new EditorGUI.DisabledGroupScope(inactiveGOs.Count == 0))
+                    {
+                        if (GUILayout.Button("Undo"))
+                        {
+                            UndoInactiveGO();
+                        }
+                        if (GUILayout.Button("Reset"))
+                        {
+                            while (inactiveGOs.Count > 0)
+                            {
+                                UndoInactiveGO();
+                            }
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+            }
+        }
+
+        static Ray MouseToRay(Vector2 mousePosition, Rect rect, Camera cam)
+        {
+            var screenPoint = mousePosition - rect.min;
+            screenPoint *= new Vector2(cam.pixelWidth, cam.pixelHeight) / rect.size;
+            screenPoint.y = cam.pixelHeight - screenPoint.y;
+            return cam.ScreenPointToRay(screenPoint);
         }
 
         void PushInactiveGO(IEnumerable<GameObject> gos)
@@ -199,148 +366,6 @@ namespace MomomaAssets
         {
             dragBeginPosition = Vector2.zero;
             dragEndPosition = Vector2.zero;
-        }
-
-        void ClearObjects()
-        {
-            if (renderGOs != null)
-            {
-                foreach (var go in renderGOs)
-                {
-                    DestroyImmediate(go.GetComponent<SkinnedMeshRenderer>().sharedMesh);
-                    DestroyImmediate(go.GetComponent<MeshCollider>().sharedMesh);
-                    DestroyImmediate(go);
-                }
-            }
-            renderGOs.Clear();
-            inactiveGOs.Clear();
-            previewRender?.Cleanup();
-            previewRender = null;
-        }
-
-        void InitializeObjects()
-        {
-            renderGOs = new HashSet<GameObject>();
-            inactiveGOs = new Stack<HashSet<GameObject>>();
-            previewRender = new PreviewRenderUtility();
-            ResetRange();
-        }
-
-        void RendererPreview()
-        {
-            var rect = GUILayoutUtility.GetRect(512f, 512f);
-            previewRender.BeginPreview(rect, GUIStyle.none);
-            var previewCam = previewRender.camera;
-            if (rect.Contains(Event.current.mousePosition))
-            {
-                if (Event.current.type == EventType.MouseDrag && Event.current.button == 1)
-                {
-                    ResetRange();
-                    var drag = Event.current.delta;
-                    if (drag != Vector2.zero)
-                    {
-                        previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.up, drag.x);
-                        previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.right, drag.y);
-                        Repaint();
-                    }
-                }
-                else if (Event.current.type == EventType.MouseDrag && Event.current.button == 2)
-                {
-                    ResetRange();
-                    var drag = Event.current.delta;
-                    if (drag != Vector2.zero)
-                    {
-                        drag.x *= -1f;
-                        var limit = Mathf.Max(new float[] { bounds.extents.x, bounds.extents.y, bounds.extents.z });
-                        var deltaPos = previewCam.transform.rotation * drag * 0.002f;
-                        deltaPos.x = Mathf.Clamp(deltaPos.x + centerPos.x, -limit, limit) - centerPos.x;
-                        deltaPos.y = Mathf.Clamp(deltaPos.y + centerPos.y, -limit, limit) - centerPos.y;
-                        deltaPos.z = Mathf.Clamp(deltaPos.z + centerPos.z, -limit, limit) - centerPos.z;
-                        centerPos += deltaPos;
-                        previewCam.transform.position += deltaPos;
-                        Repaint();
-                    }
-                }
-                else if (Event.current.type == EventType.ScrollWheel)
-                {
-                    var scroll = Event.current.delta.y;
-                    if (scroll != 0)
-                    {
-                        var cameraPos = previewCam.transform.position - centerPos;
-                        var farLimit = Mathf.Max(new float[] { bounds.size.x, bounds.size.y, bounds.size.z }) * 4f;
-                        previewCam.transform.position = centerPos + cameraPos.normalized * Mathf.Clamp(cameraPos.magnitude + scroll * 0.1f, 0.001f, farLimit);
-                        Repaint();
-                    }
-                }
-                else if (Event.current.type == EventType.MouseDrag && Event.current.button == 0)
-                {
-                    dragEndPosition = Event.current.mousePosition;
-                    if (dragBeginPosition == Vector2.zero)
-                    {
-                        dragBeginPosition = dragEndPosition;
-                    }
-                    Repaint();
-                }
-                else if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
-                {
-                    ResetRange();
-                    dragBeginPosition = Event.current.mousePosition;
-                    dragEndPosition = dragBeginPosition;
-                }
-                else if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
-                {
-                    var endRay = MouseToRay(Event.current.mousePosition, rect, previewCam);
-                    var beginRay = MouseToRay(dragBeginPosition, rect, previewCam);
-                    var physicsScene = PhysicsSceneExtensions.GetPhysicsScene(previewCam.scene);
-                    if (dragBeginPosition == dragEndPosition)
-                    {
-                        RaycastHit hit;
-                        physicsScene.Raycast(endRay.origin, endRay.direction, out hit, 10f);
-                        if (hit.collider)
-                        {
-                            PushInactiveGO(new HashSet<GameObject>() { hit.collider.gameObject });
-                        }
-                    }
-                    else
-                    {
-                        var position = (endRay.origin + beginRay.origin) * 0.5f + 5f * endRay.direction;
-                        var rotation = Quaternion.LookRotation(endRay.direction, previewCam.transform.up);
-                        var size = previewCam.transform.InverseTransformPoint(endRay.origin) - previewCam.transform.InverseTransformPoint(beginRay.origin);
-                        size.x = Math.Abs(size.x * 0.5f);
-                        size.y = Math.Abs(size.y * 0.5f);
-                        size.z = 10f;
-                        Physics.queriesHitBackfaces = true;
-                        var cols = s_OverlapBoxMethodInfo.Invoke(null, new object[] { physicsScene, position, size, rotation, Physics.AllLayers, QueryTriggerInteraction.UseGlobal }) as Collider[];
-                        Physics.queriesHitBackfaces = false;
-                        if (cols.Length > 0)
-                        {
-                            PushInactiveGO(cols.Select(c => c.gameObject));
-                        }
-                    }
-                    Repaint();
-                    ResetRange();
-                }
-            }
-            else if (Event.current.type != EventType.Layout)
-            {
-                ResetRange();
-            }
-            if (bounds != null)
-            {
-                previewCam.nearClipPlane = Mathf.Sqrt(bounds.SqrDistance(previewCam.transform.position));
-                previewCam.farClipPlane = bounds.size.magnitude + previewCam.nearClipPlane;
-            }
-            previewCam.Render();
-            previewRender.EndAndDrawPreview(rect);
-            EditorGUI.DrawRect(new Rect(dragBeginPosition, dragEndPosition - dragBeginPosition), s_RangeColor);
-        }
-
-        static Ray MouseToRay(Vector2 mousePosition, Rect rect, Camera cam)
-        {
-            var screenPoint = mousePosition - rect.min;
-            screenPoint *= new Vector2(cam.pixelWidth, cam.pixelHeight) / rect.size;
-            screenPoint.y = cam.pixelHeight - screenPoint.y;
-            return cam.ScreenPointToRay(screenPoint);
         }
 
         void MergeAndExportSkinnedMeshes()
@@ -615,6 +640,10 @@ namespace MomomaAssets
                             previewRender.AddSingleGO(renderGO);
                         }
                     }
+                    catch
+                    {
+                        throw;
+                    }
                     finally
                     {
                         EditorUtility.ClearProgressBar();
@@ -623,11 +652,6 @@ namespace MomomaAssets
             }
             foreach (var t in rootObjCopy.GetComponentsInChildren<Transform>(true))
                 UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform));
-        }
-
-        static Vector3 InverseScale(Vector3 s)
-        {
-            return new Vector3(1f / s.x, 1f / s.y, 1f / s.z);
         }
 
         class AdjacentTriangle
