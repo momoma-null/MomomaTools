@@ -419,8 +419,8 @@ namespace MomomaAssets
                     combines.Add(subMeshCombines);
                 }
                 EditorUtility.DisplayProgressBar("Export Meshes", "Normalizing bone transforms.", 0f);
-                var transforms = exportGO.GetComponentsInChildren<Transform>();
-                var unusedTfs = transforms.Except(allBones).Where(t => rootBones.All(r => !r.IsChildOf(t)));
+                var transforms = exportGO.GetComponentsInChildren<Transform>(true);
+                var unusedTfs = transforms.Except(allBones).Where(t => rootBones.All(r => !r.IsChildOf(t))).Reverse().ToArray();
                 foreach (var t in unusedTfs)
                     DestroyImmediate(t.gameObject);
                 var realRootBones = rootBones.Where(root => !rootBones.Any(t => t != root && root.IsChildOf(t)));
