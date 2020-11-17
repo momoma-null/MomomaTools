@@ -5,38 +5,51 @@ using System.Collections.Generic;
 namespace MomomaAssets
 {
 
-public class UnusedAnimatorAssetsRemover : Editor
-{
-    [MenuItem("MomomaTools/RemoveUnusedAnimatorAssets")]
-    static void Remove()
+    public class UnusedAnimatorAssetsRemover : Editor
     {
-        var ctrls = Resources.FindObjectsOfTypeAll<RuntimeAnimatorController>();
-        AssetDatabase.StartAssetEditing();
-        foreach (var ctrl in ctrls)
+        [MenuItem("MomomaTools/RemoveUnusedAnimatorAssets")]
+        static void Remove()
         {
-            var subAssets = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(ctrl));
-            var objHash = new HashSet<UnityEngine.Object>(subAssets);
-            foreach (var subAsset in subAssets)
+            var ctrls = Resources.FindObjectsOfTypeAll<RuntimeAnimatorController>();
+            try
             {
-                var so = new SerializedObject(subAsset);
-                so.Update();
-                var sp = so.GetIterator();
-                while (sp.Next(true))
+                AssetDatabase.StartAssetEditing();
+                foreach (var ctrl in ctrls)
                 {
-                    if (sp.propertyType == SerializedPropertyType.ObjectReference)
+                    var subAssets = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(ctrl));
+                    var objHash = new HashSet<UnityEngine.Object>(subAssets);
+                    foreach (var subAsset in subAssets)
                     {
-                        objHash.Remove(sp.objectReferenceValue);
+                        if (subAsset == null)
+                            continue;
+                        using (var so = new SerializedObject(subAsset))
+                        {
+                            var sp = so.GetIterator();
+                            while (sp.Next(true))
+                            {
+                                if (sp.propertyType == SerializedPropertyType.ObjectReference && sp.objectReferenceValue != null)
+                                    objHash.Remove(sp.objectReferenceValue);
+                            }
+                        }
+                    }
+                    foreach (var obj in objHash)
+                    {
+                        if (obj == null)
+                            continue;
+                        AssetDatabase.RemoveObjectFromAsset(obj);
+                        Debug.Log("Remove : " + obj.ToString());
                     }
                 }
             }
-            foreach (var obj in objHash)
+            catch
             {
-                AssetDatabase.RemoveObjectFromAsset(obj);
-                Debug.Log("Remove : " + obj.ToString());
+                throw;
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
             }
         }
-        AssetDatabase.StopAssetEditing();
     }
-}
 
 }// namespace MomomaAssets
