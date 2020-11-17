@@ -70,6 +70,7 @@ namespace MomomaAssets
             multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
             this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
             this.GetItems = GetItems;
+            m_Items = null;
 
             multiColumnHeader.ResizeToFit();
             Reload();
@@ -77,6 +78,7 @@ namespace MomomaAssets
 
         readonly string sortedColumnIndexStateKey;
         readonly Func<IEnumerable<TreeViewItem>> GetItems;
+
         List<TreeViewItem> m_Items;
 
         public void FullReload()
@@ -99,17 +101,13 @@ namespace MomomaAssets
                     return m_Items;
                 m_Items.AddRange(GetItems());
             }
-            m_Items.Sort((X, Y) => -string.Compare(X?.displayName, Y?.displayName));
-            SearchFullTree();
-            Sort(multiColumnHeader);
-            Repaint();
-            return m_Items;
-        }
-
-        void SearchFullTree()
-        {
+            IEnumerable<TreeViewItem> tempItems = m_Items;
             if (hasSearch)
-                m_Items?.RemoveAll(item => !DoesItemMatchSearch(item, searchString));
+                tempItems = m_Items.Where(item => DoesItemMatchSearch(item, searchString));
+            var rows = tempItems.ToList();
+            Sort(rows, multiColumnHeader);
+            Repaint();
+            return rows;
         }
 
         protected override void RowGUI(RowGUIArgs args)
@@ -205,7 +203,7 @@ namespace MomomaAssets
 
         protected override void SearchChanged(string newSearch)
         {
-            FullReload();
+            Reload();
         }
 
         void OnVisibleColumnChanged(MultiColumnHeader header)
@@ -213,50 +211,57 @@ namespace MomomaAssets
             Reload();
         }
 
-        void OnSortingChanged(MultiColumnHeader multiColumnHeader)
+        void OnSortingChanged(MultiColumnHeader header)
         {
             Reload();
         }
 
-        void Sort(MultiColumnHeader multiColumnHeader)
+        void Sort(List<TreeViewItem> rows, MultiColumnHeader multiColumnHeader)
         {
             var index = multiColumnHeader.sortedColumnIndex;
-            if (index < 0 || m_Items == null)
+            if (index < 0)
                 return;
             SessionState.SetInt(sortedColumnIndexStateKey, index);
-
-            var column = (MultiColumn<T>)multiColumnHeader.GetColumn(index);
-
-            IEnumerable<TreeViewItem> items = m_Items.OrderBy(item =>
+            if (rows == null || rows.Count == 0)
+                return;
+            var column = multiColumnHeader.GetColumn(index) as MultiColumn<T>;
+            do
             {
+                var row = rows[0] as T;
                 if (column.GetValue != null)
                 {
-                    var val = column.GetValue((T)item);
-                    if (val is IComparable)
-                        return val;
+                    var value = column.GetValue(row);
+                    if (value is IComparable)
+                    {
+                        rows.Sort((x, y) => (column.GetValue(x as T) as IComparable).CompareTo(column.GetValue(y as T)));
+                        break;
+                    }
                 }
-                var sp = column.GetProperty((T)item);
+                var sp = column.GetProperty(row);
                 switch (sp.propertyType)
                 {
                     case SerializedPropertyType.Boolean:
-                        return sp.boolValue;
+                        rows.Sort((x, y) => column.GetProperty(x as T).boolValue.CompareTo(column.GetProperty(y as T).boolValue));
+                        break;
                     case SerializedPropertyType.Float:
-                        return sp.floatValue;
+                        rows.Sort((x, y) => column.GetProperty(x as T).floatValue.CompareTo(column.GetProperty(y as T).floatValue));
+                        break;
                     case SerializedPropertyType.Integer:
-                        return sp.intValue;
+                        rows.Sort((x, y) => column.GetProperty(x as T).intValue.CompareTo(column.GetProperty(y as T).intValue));
+                        break;
                     case SerializedPropertyType.ObjectReference:
-                        return sp.objectReferenceValue ? sp.objectReferenceValue.name : string.Empty;
+                        rows.Sort((x, y) => (column.GetProperty(x as T).objectReferenceValue?.name ?? string.Empty).CompareTo((column.GetProperty(y as T).objectReferenceValue?.name ?? string.Empty)));
+                        break;
                     case SerializedPropertyType.Enum:
-                        return sp.enumValueIndex;
+                        rows.Sort((x, y) => column.GetProperty(x as T).enumValueIndex.CompareTo(column.GetProperty(y as T).enumValueIndex));
+                        break;
                     default:
                         throw new InvalidOperationException("column property is unknown type");
                 }
-            });
-
+            }
+            while (false);
             if (!multiColumnHeader.IsSortedAscending(index))
-                items = items.Reverse();
-
-            m_Items = items.ToList();
+                rows.Reverse();
         }
     }
 
