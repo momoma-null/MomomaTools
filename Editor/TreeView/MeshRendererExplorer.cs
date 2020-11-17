@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Rendering;
@@ -7,24 +8,25 @@ using UnityEditor.IMGUI.Controls;
 
 namespace MomomaAssets
 {
-    public class MeshRendererExplorer : EditorWindow
+    class MeshRendererExplorer : EditorWindow
     {
-        private int meshrendererNum;
-        private int materialsNum;
-        private int originalMaterialsNum;
-        private int triangleNum;
-        private int textureNum;
-        private int textureSize;
+        int meshrendererNum;
+        int materialsNum;
+        int originalMaterialsNum;
+        int triangleNum;
+        int textureNum;
+        int textureSize;
 
-        private int selectTab;
-        private GameObject rootGO;
-        private bool includeInactive;
-        private SearchField searchField;
-        private TreeView treeView;
-        private const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
-        private const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
-        private const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
-        private const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
+        int selectedTab;
+        GameObject rootGO;
+        bool includeInactive;
+        SearchField searchField;
+        TreeView treeView;
+
+        const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
+        const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
+        const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
+        const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
 
         [MenuItem("MomomaTools/MeshRendererExplorer")]
         static void ShowWindow()
@@ -38,7 +40,7 @@ namespace MomomaAssets
             CountReset();
         }
 
-        private void InitializeStaticTab()
+        void InitializeStaticTab()
         {
             var header = new MultiColumnHeaderMaker<GameObjectTreeViewItem>();
             header.AddtoList("Name", 100, item => item.displayName);
@@ -50,13 +52,13 @@ namespace MomomaAssets
             header.AddtoList("Navigation", 30, item => item.NavigationStatic, (item, value) => item.NavigationStatic = (bool)value, item => item.m_StaticEditorFlags);
             header.AddtoList("OffMeshLink", 30, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = (bool)value, item => item.m_StaticEditorFlags);
             header.AddtoList("Reflection", 30, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = (bool)value, item => item.m_StaticEditorFlags);
-            treeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetMeshRenderers());
+            treeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
             treeView.searchString = SessionState.GetString(searchStringStateKey, "");
             searchField = new SearchField();
             searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
         }
 
-        private void InitializeLightingTab()
+        void InitializeLightingTab()
         {
             var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
             header.AddtoList("Name", 100, item => item.displayName);
@@ -65,74 +67,75 @@ namespace MomomaAssets
             header.AddtoList("ProbeAnchor", 50, item => item.m_ProbeAnchor);
             header.AddtoList("CastShadows", 50, item => item.m_CastShadows);
             header.AddtoList("ReceiveShadows", 30, item => item.m_ReceiveShadows);
-            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetMeshRenderers());
+            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
             treeView.searchString = SessionState.GetString(searchStringStateKey, "");
             searchField = new SearchField();
             searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
         }
 
-        private void InitializeLightmapTab()
+        void InitializeLightmapTab()
         {
             var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
             header.AddtoList("Name", 100, item => item.displayName);
             header.AddtoList("ScaleInLightmap", 50, item => item.m_ScaleInLightmap);
             header.AddtoList("PrioritizeIllumination", 30, item => item.m_ImportantGI);
             header.AddtoList("StitchSeams", 30, item => item.m_StitchLightmapSeams);
-            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetMeshRenderers(true));
+            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
             treeView.searchString = SessionState.GetString(searchStringStateKey, "");
             searchField = new SearchField();
             searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
         }
 
-        private void OnGUI()
+        void OnGUI()
         {
             EditorGUI.BeginChangeCheck();
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
-                selectTab = GUILayout.Toolbar(selectTab, new string[] { "Count", "Static", "Lighting", "Lightmap" }, GUILayout.MaxWidth(500));
+                selectedTab = GUILayout.Toolbar(selectedTab, new string[] { "Count", "Static", "Lighting", "Lightmap" }, GUILayout.MaxWidth(500));
                 GUILayout.FlexibleSpace();
             }
             var changedTab = EditorGUI.EndChangeCheck();
 
-            EditorGUI.BeginChangeCheck();
-            rootGO = EditorGUILayout.ObjectField("Root GameObject", rootGO, typeof(GameObject), true) as GameObject;
-            using (new EditorGUILayout.HorizontalScope())
+            using (var check = new EditorGUI.ChangeCheckScope())
             {
-                includeInactive = GUILayout.Toggle(includeInactive, "Include Inactive GameObject");
-                if (EditorGUI.EndChangeCheck())
-                    OnHierarchyChange();
-                if (selectTab > 0)
+                rootGO = EditorGUILayout.ObjectField("Root GameObject", rootGO, typeof(GameObject), true) as GameObject;
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    switch (selectTab)
+                    includeInactive = GUILayout.Toggle(includeInactive, "Include Inactive GameObject");
+                    if (check.changed)
+                        OnHierarchyChange();
+                    if (selectedTab > 0)
                     {
-                        case 1:
-                            if (changedTab || treeView == null)
-                                InitializeStaticTab();
-                            break;
-                        case 2:
-                            if (changedTab || treeView == null)
-                                InitializeLightingTab();
-                            break;
-                        case 3:
-                            if (changedTab || treeView == null)
-                                InitializeLightmapTab();
-                            break;
-                        default:
-                            throw new System.InvalidOperationException("column property is unknown type");
-                    }
-                    EditorGUI.BeginChangeCheck();
-                    var searchString = searchField.OnToolbarGUI(treeView.searchString);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        SessionState.SetString(searchStringStateKey, searchString);
-                        treeView.searchString = searchString;
+                        switch (selectedTab)
+                        {
+                            case 1:
+                                if (changedTab || treeView == null)
+                                    InitializeStaticTab();
+                                break;
+                            case 2:
+                                if (changedTab || treeView == null)
+                                    InitializeLightingTab();
+                                break;
+                            case 3:
+                                if (changedTab || treeView == null)
+                                    InitializeLightmapTab();
+                                break;
+                            default:
+                                throw new System.InvalidOperationException("column property is unknown type");
+                        }
+                        EditorGUI.BeginChangeCheck();
+                        var searchString = searchField.OnToolbarGUI(treeView.searchString);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            SessionState.SetString(searchStringStateKey, searchString);
+                            treeView.searchString = searchString;
+                        }
                     }
                 }
             }
 
-            // Count Mode
-            if (selectTab == 0)
+            if (selectedTab == 0)
             {
                 if (GUILayout.Button("Copy to Clipboard", GUILayout.ExpandWidth(false)))
                 {
@@ -157,14 +160,23 @@ namespace MomomaAssets
             }
         }
 
-        private List<MeshRenderer> GetMeshRenderers(bool isLightmapStatic = false)
+        IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems(bool isGameObject = false, bool isLightmapStatic = false)
         {
-            var meshRendererList = new List<MeshRenderer>();
+            var mrs = GetMeshRenderers(isLightmapStatic);
+            if (isGameObject)
+                return mrs.Select(mr => new GameObjectTreeViewItem(mr.gameObject.GetInstanceID(), mr.gameObject)).ToArray();
+            else
+                return mrs.Select(mr => new MeshRendererTreeViewItem(mr.gameObject.GetInstanceID(), mr)).ToArray();
+        }
+
+        IEnumerable<MeshRenderer> GetMeshRenderers(bool isLightmapStatic = false)
+        {
+            var meshRenderers = new HashSet<MeshRenderer>();
             if (rootGO)
             {
                 if (includeInactive || rootGO.activeInHierarchy)
                 {
-                    meshRendererList.AddRange(rootGO.GetComponentsInChildren<MeshRenderer>());
+                    meshRenderers.UnionWith(rootGO.GetComponentsInChildren<MeshRenderer>());
                 }
             }
             else
@@ -176,19 +188,19 @@ namespace MomomaAssets
                     foreach (var rootObj in rootObjs)
                     {
                         if (includeInactive || rootObj.activeInHierarchy)
-                            meshRendererList.AddRange(rootObj.GetComponentsInChildren<MeshRenderer>());
+                            meshRenderers.UnionWith(rootObj.GetComponentsInChildren<MeshRenderer>());
                     }
 
                 }
             }
             if (!includeInactive)
-                meshRendererList.RemoveAll(mr => !mr.enabled);
+                meshRenderers.RemoveWhere(mr => !mr.enabled);
             if (isLightmapStatic)
-                meshRendererList.RemoveAll(mr => 0 == (GameObjectUtility.GetStaticEditorFlags(mr.gameObject) & StaticEditorFlags.LightmapStatic));
-            return meshRendererList;
+                meshRenderers.RemoveWhere(mr => !GameObjectUtility.AreStaticEditorFlagsSet(mr.gameObject, StaticEditorFlags.LightmapStatic));
+            return meshRenderers;
         }
 
-        private void CountReset()
+        void CountReset()
         {
             meshrendererNum = 0;
             materialsNum = 0;
@@ -198,7 +210,7 @@ namespace MomomaAssets
             textureSize = 0;
         }
 
-        private void CountMesh()
+        void CountMesh()
         {
             CountReset();
             var originalMaterials = new HashSet<Material>();
@@ -214,14 +226,16 @@ namespace MomomaAssets
                 {
                     if (mat && originalMaterials.Add(mat))
                     {
-                        var matSO = new SerializedObject(mat);
-                        var m_TexEnvs = matSO.FindProperty("m_SavedProperties.m_TexEnvs");
-                        for (var k = 0; k < m_TexEnvs.arraySize; ++k)
+                        using (var matSO = new SerializedObject(mat))
                         {
-                            var tex = m_TexEnvs.GetArrayElementAtIndex(k).FindPropertyRelative("second.m_Texture").objectReferenceValue as Texture;
-                            if (tex && originalTextures.Add(tex))
+                            var m_TexEnvs = matSO.FindProperty("m_SavedProperties.m_TexEnvs");
+                            for (var k = 0; k < m_TexEnvs.arraySize; ++k)
                             {
-                                textureSize += tex.height / 32 * tex.width / 32;
+                                var tex = m_TexEnvs.GetArrayElementAtIndex(k).FindPropertyRelative("second.m_Texture").objectReferenceValue as Texture;
+                                if (tex && originalTextures.Add(tex))
+                                {
+                                    textureSize += tex.height / 32 * tex.width / 32;
+                                }
                             }
                         }
                     }
@@ -231,7 +245,7 @@ namespace MomomaAssets
             textureNum = originalTextures.Count;
         }
 
-        private void CopyCountToClipBoard()
+        void CopyCountToClipBoard()
         {
             EditorGUIUtility.systemCopyBuffer =
             meshrendererNum.ToString() + "," +
@@ -285,9 +299,9 @@ namespace MomomaAssets
             readonly internal SerializedProperty m_Layer;
             readonly internal SerializedProperty m_StaticEditorFlags;
 
-            internal GameObjectTreeViewItem(int id, Object obj) : base(id, obj)
+            internal GameObjectTreeViewItem(int id, GameObject obj) : base(id)
             {
-                serializedObject = new SerializedObject(((MeshRenderer)obj).gameObject);
+                serializedObject = new SerializedObject(obj);
                 displayName = obj.name;
 
                 m_Layer = serializedObject.FindProperty("m_Layer");
@@ -325,7 +339,7 @@ namespace MomomaAssets
             readonly internal SerializedProperty m_ImportantGI;
             readonly internal SerializedProperty m_StitchLightmapSeams;
 
-            internal MeshRendererTreeViewItem(int id, Object obj) : base(id, obj)
+            internal MeshRendererTreeViewItem(int id, MeshRenderer obj) : base(id)
             {
                 serializedObject = new SerializedObject(obj);
                 displayName = obj.name;
