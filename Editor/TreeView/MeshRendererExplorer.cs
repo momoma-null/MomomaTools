@@ -21,7 +21,7 @@ namespace MomomaAssets
         GameObject rootGO;
         bool includeInactive;
         SearchField searchField;
-        TreeView treeView;
+        UnityObjectTreeViewBase treeView;
 
         const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
         const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
@@ -36,7 +36,7 @@ namespace MomomaAssets
 
         public void OnHierarchyChange()
         {
-            (treeView as IFullReloadTreeView)?.FullReload();
+            treeView?.OnHierarchyChange();
             CountReset();
         }
 

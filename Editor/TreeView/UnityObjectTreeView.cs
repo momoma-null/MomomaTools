@@ -53,12 +53,14 @@ namespace MomomaAssets
         }
     }
 
-    interface IFullReloadTreeView
+    public abstract class UnityObjectTreeViewBase : TreeView
     {
-        void FullReload();
+        protected UnityObjectTreeViewBase(TreeViewState state, MultiColumnHeader multiColumnHeader) : base(state, multiColumnHeader) { }
+        
+        public abstract void OnHierarchyChange();
     }
 
-    public class UnityObjectTreeView<T> : TreeView, IFullReloadTreeView where T : UnityObjectTreeViewItem
+    public class UnityObjectTreeView<T> : UnityObjectTreeViewBase where T : UnityObjectTreeViewItem
     {
         public UnityObjectTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, Func<IEnumerable<TreeViewItem>> GetItems) : base(state, multiColumnHeader)
         {
@@ -81,7 +83,7 @@ namespace MomomaAssets
 
         List<TreeViewItem> m_Items;
 
-        public void FullReload()
+        public override void OnHierarchyChange()
         {
             m_Items = null;
             Reload();
