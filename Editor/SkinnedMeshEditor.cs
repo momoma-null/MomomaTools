@@ -461,7 +461,11 @@ namespace MomomaAssets
                     foreach (var t in tfs)
                         positionQueue.Enqueue(t.position);
                     foreach (var t in tfs)
-                        t.Reset();
+                    {
+                        t.localPosition = Vector3.zero;
+                        t.localRotation = Quaternion.identity;
+                        t.localScale = Vector3.one;
+                    }
                     foreach (var t in tfs)
                         t.position = positionQueue.Dequeue();
                     foreach (var root in realRootBones)
