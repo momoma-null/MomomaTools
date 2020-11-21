@@ -382,6 +382,7 @@ namespace MomomaAssets
                 float max;
                 var skinnedMRs = renderGOs.Select(go => go.GetComponent<SkinnedMeshRenderer>());
                 var allBones = new HashSet<Transform>();
+                var combinedBones = new List<Transform>();
                 var rootBones = new HashSet<Transform>();
                 var blendShapeDict = new Dictionary<string, List<CombineInstance>>();
                 var materials = new HashSet<Material>();
@@ -414,6 +415,7 @@ namespace MomomaAssets
                         EditorUtility.DisplayProgressBar("Export Meshes", "Making combine instances.", smCombineIndex / max);
                         var srcMesh = r.sharedMesh;
                         allBones.UnionWith(r.bones);
+                        combinedBones.AddRange(r.bones);
                         rootBones.Add(r.bones[0]);
                         var srcBakedMesh = new Mesh();
                         r.BakeMesh(srcBakedMesh);
@@ -529,32 +531,30 @@ namespace MomomaAssets
                     ++keyIndex;
                 }
                 EditorUtility.DisplayProgressBar("Export Meshes", "Normalizing the Mesh data.", 0f);
-                var bindPoses = outMesh.bindposes;
-                var bindPoseDict = new Dictionary<Matrix4x4, int>();
-                var bindPoseIndex = 0;
-                for (var i = 0; i < bindPoses.Length; ++i)
+                var orderedBones = allBones.OrderBy(t => Array.IndexOf(transforms, t)).ToArray();
+                var orderedBonesDict = new Dictionary<Transform, int>();
+                var boneIndex = 0;
+                foreach (var t in orderedBones)
                 {
-                    if (bindPoseDict.ContainsKey(bindPoses[i]))
-                        continue;
-                    bindPoseDict[bindPoses[i]] = bindPoseIndex;
-                    ++bindPoseIndex;
+                    orderedBonesDict[t] = boneIndex;
+                    ++boneIndex;
                 }
                 outMesh.boneWeights = outMesh.boneWeights.Select(weight =>
                 {
-                    if (weight.boneIndex0 > -1) weight.boneIndex0 = bindPoseDict[bindPoses[weight.boneIndex0]];
-                    if (weight.boneIndex1 > -1) weight.boneIndex1 = bindPoseDict[bindPoses[weight.boneIndex1]];
-                    if (weight.boneIndex2 > -1) weight.boneIndex2 = bindPoseDict[bindPoses[weight.boneIndex2]];
-                    if (weight.boneIndex3 > -1) weight.boneIndex3 = bindPoseDict[bindPoses[weight.boneIndex3]];
+                    if (weight.boneIndex0 > -1) weight.boneIndex0 = orderedBonesDict[combinedBones[weight.boneIndex0]];
+                    if (weight.boneIndex1 > -1) weight.boneIndex1 = orderedBonesDict[combinedBones[weight.boneIndex1]];
+                    if (weight.boneIndex2 > -1) weight.boneIndex2 = orderedBonesDict[combinedBones[weight.boneIndex2]];
+                    if (weight.boneIndex3 > -1) weight.boneIndex3 = orderedBonesDict[combinedBones[weight.boneIndex3]];
                     return weight;
                 }).ToArray();
-                outMesh.bindposes = bindPoseDict.OrderBy(p => p.Value).Select(p => p.Key).ToArray();
+                outMesh.bindposes = orderedBones.Select(t => t.worldToLocalMatrix).ToArray();
                 outMesh.normals = outMesh.normals.Select(n => n.normalized).ToArray();
                 MeshUtility.Optimize(outMesh);
                 var newMeshGO = new GameObject("body");
                 var newSkinned = newMeshGO.AddComponent<SkinnedMeshRenderer>();
                 newSkinned.sharedMaterials = materials.ToArray();
                 newSkinned.sharedMesh = outMesh;
-                newSkinned.bones = allBones.OrderBy(t => bindPoseDict[t.worldToLocalMatrix]).ToArray();
+                newSkinned.bones = orderedBones;
                 newMeshGO.transform.parent = exportGO.transform;
                 EditorUtility.DisplayProgressBar("Export Meshes", "Export assets.", 1f);
                 var settings = ExportModelSettingsSerializeType.GetConstructor(new Type[] { }).Invoke(new object[] { });
