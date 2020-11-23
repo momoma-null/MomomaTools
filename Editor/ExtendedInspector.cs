@@ -12,9 +12,6 @@ namespace MomomaAssets
     class ExtendedInspector : EditorWindow
     {
         static readonly Type s_InspectorWindowType = Type.GetType("UnityEditor.InspectorWindow, UnityEditor.dll");
-        static readonly MethodInfo s_OnGUIInfo = s_InspectorWindowType.GetMethod("OnGUI", BindingFlags.NonPublic | BindingFlags.Instance);
-        static readonly MethodInfo s_GetObjectsLockedInfo = s_InspectorWindowType.GetMethod("GetObjectsLocked", BindingFlags.NonPublic | BindingFlags.Instance);
-        static readonly MethodInfo s_SetObjectsLockedInfo = s_InspectorWindowType.GetMethod("SetObjectsLocked", BindingFlags.NonPublic | BindingFlags.Instance);
         static readonly FieldInfo s_TrackerInfo = s_InspectorWindowType.GetField("m_Tracker", BindingFlags.NonPublic | BindingFlags.Instance);
         static readonly Type s_CustomEditorAttributesType = Type.GetType("UnityEditor.CustomEditorAttributes, UnityEditor.dll");
         static readonly IDictionary s_kSCustomEditors = s_CustomEditorAttributesType.GetField("kSCustomEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
@@ -22,7 +19,7 @@ namespace MomomaAssets
         static readonly Type s_MonoEditorTypeType = s_CustomEditorAttributesType.GetNestedType("MonoEditorType", BindingFlags.NonPublic);
         static readonly FieldInfo[] s_MonoEditorTypeInfos = s_MonoEditorTypeType.GetFields();
         static readonly MethodInfo s_MemberwiseCloneInfo = typeof(object).GetMethod("MemberwiseClone", BindingFlags.NonPublic | BindingFlags.Instance);
-        static readonly Type s_GenericInspectorType = Type.GetType("UnityEditor.GenericInspector, UnityEditor.dll");
+        static readonly Dictionary<string, MethodInfo> s_MethodInfos = new Dictionary<string, MethodInfo>();
 
         static GUIContent s_PrevArrow;
         static GUIContent s_NextArrow;
@@ -33,16 +30,40 @@ namespace MomomaAssets
         Vector2 m_ScrollPos;
         bool m_DoRebuild;
 
+        int selectedTabIndex
+        {
+            get { return m_SelectedTabIndex; }
+            set
+            {
+                if (m_SelectedTabIndex == value)
+                    return;
+                Invoke("OnLostFocus");
+                m_SelectedTabIndex = value;
+            }
+        }
+
         [MenuItem("MomomaTools/ExtendedInspector")]
         static void ShowWindow()
         {
             EditorWindow.GetWindow<ExtendedInspector>("ExtendedInspector");
         }
 
+        static MethodInfo GetMethodInfo(string methodName)
+        {
+            MethodInfo info;
+            if (s_MethodInfos.TryGetValue(methodName, out info))
+            {
+                return info;
+            }
+            info = s_InspectorWindowType.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            s_MethodInfos.Add(methodName, info);
+            return info;
+        }
+
         void OnEnable()
         {
             m_InspectorWindows = new List<EditorWindow>();
-            m_SelectedTabIndex = 0;
+            selectedTabIndex = 0;
             m_ScrollPos = Vector2.zero;
             autoRepaintOnSceneChange = true;
             if (s_PrevArrow == null)
@@ -60,6 +81,11 @@ namespace MomomaAssets
             Clear();
         }
 
+        void OnLostFocus()
+        {
+            Invoke("OnLostFocus");
+        }
+
         void OnHierarchyChange()
         {
             if (s_IsDeveloperMode)
@@ -71,7 +97,35 @@ namespace MomomaAssets
         {
             if (s_IsDeveloperMode)
                 m_DoRebuild = true;
+            InvokeAll("OnSelectionChange");
             Repaint();
+        }
+
+        void OnInspectorUpdate()
+        {
+            Invoke("OnInspectorUpdate");
+        }
+
+        void Update()
+        {
+            Invoke("Update");
+        }
+
+        void InvokeAll(string methodName)
+        {
+            if (m_InspectorWindows != null)
+            {
+                foreach (var win in m_InspectorWindows)
+                    GetMethodInfo(methodName).Invoke(win, new object[] { });
+            }
+        }
+
+        void Invoke(string methodName)
+        {
+            if (m_InspectorWindows != null && selectedTabIndex > -1 && selectedTabIndex < m_InspectorWindows.Count)
+            {
+                GetMethodInfo(methodName).Invoke(m_InspectorWindows[selectedTabIndex], new object[] { });
+            }
         }
 
         void OnGUI()
@@ -94,7 +148,7 @@ namespace MomomaAssets
 
             using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
             {
-                m_SelectedTabIndex = Mathf.Clamp(m_SelectedTabIndex, 0, m_InspectorWindows.Count - 1);
+                selectedTabIndex = Mathf.Clamp(selectedTabIndex, 0, m_InspectorWindows.Count - 1);
                 var names = GetObjectNames();
                 var scrollPosMax = 0f;
                 using (var horizontal = new EditorGUILayout.HorizontalScope())
@@ -102,7 +156,12 @@ namespace MomomaAssets
                 using (var innerHorizontal = new EditorGUILayout.HorizontalScope())
                 {
                     scrollPosMax = innerHorizontal.rect.width - horizontal.rect.width;
-                    m_SelectedTabIndex = GUILayout.Toolbar(m_SelectedTabIndex, names, EditorStyles.toolbarButton, GUI.ToolbarButtonSize.FitToContents);
+                    EditorGUI.BeginChangeCheck();
+                    var newSelectedTabIndex = GUILayout.Toolbar(selectedTabIndex, names, EditorStyles.toolbarButton, GUI.ToolbarButtonSize.FitToContents);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        selectedTabIndex = newSelectedTabIndex;
+                    }
                     if (Event.current.delta != Vector2.zero && horizontal.rect.Contains(Event.current.mousePosition - m_ScrollPos + horizontal.rect.min))
                     {
                         m_ScrollPos.x -= Event.current.delta.x;
@@ -114,24 +173,24 @@ namespace MomomaAssets
                 }
                 using (var check = new EditorGUI.ChangeCheckScope())
                 {
-                    using (new EditorGUI.DisabledScope(m_SelectedTabIndex <= 0))
+                    using (new EditorGUI.DisabledScope(selectedTabIndex <= 0))
                     {
                         if (GUILayout.Button(s_PrevArrow, EditorStyles.toolbarButton))
                         {
-                            --m_SelectedTabIndex;
+                            --selectedTabIndex;
                         }
                     }
-                    using (new EditorGUI.DisabledScope(m_SelectedTabIndex >= m_InspectorWindows.Count - 1))
+                    using (new EditorGUI.DisabledScope(selectedTabIndex >= m_InspectorWindows.Count - 1))
                     {
                         if (GUILayout.Button(s_NextArrow, EditorStyles.toolbarButton))
                         {
-                            ++m_SelectedTabIndex;
+                            ++selectedTabIndex;
                         }
                     }
                     if (check.changed)
                     {
                         m_ScrollPos.x = 0f;
-                        for (var i = 0; i < m_SelectedTabIndex; ++i)
+                        for (var i = 0; i < selectedTabIndex; ++i)
                         {
                             if (i > 0)
                                 m_ScrollPos.x += Math.Max(EditorStyles.toolbarButton.margin.right, EditorStyles.toolbarButton.margin.left);
@@ -145,16 +204,16 @@ namespace MomomaAssets
                     if (GUILayout.Button("+", EditorStyles.toolbarButton))
                     {
                         var newInspectorWindow = ScriptableObject.CreateInstance(s_InspectorWindowType) as EditorWindow;
-                        s_SetObjectsLockedInfo.Invoke(newInspectorWindow, new object[] { Selection.objects.ToList() });
+                        GetMethodInfo("SetObjectsLocked").Invoke(newInspectorWindow, new object[] { Selection.objects.ToList() });
                         m_InspectorWindows.Add(newInspectorWindow);
-                        m_SelectedTabIndex = m_InspectorWindows.Count - 1;
+                        selectedTabIndex = m_InspectorWindows.Count - 1;
                     }
                 }
-                using (new EditorGUI.DisabledScope(m_SelectedTabIndex == 0))
+                using (new EditorGUI.DisabledScope(selectedTabIndex == 0))
                 {
                     if (GUILayout.Button("-", EditorStyles.toolbarButton))
                     {
-                        DestroyImmediate(m_InspectorWindows[m_SelectedTabIndex]);
+                        DestroyImmediate(m_InspectorWindows[selectedTabIndex]);
                         Repaint();
                         return;
                     }
@@ -168,7 +227,7 @@ namespace MomomaAssets
 
             using (var cellLayout = new EditorGUILayout.VerticalScope(GUILayout.Width(position.width)))
             {
-                var window = m_InspectorWindows[m_SelectedTabIndex];
+                var window = m_InspectorWindows[selectedTabIndex];
                 if (Event.current.type == EventType.Repaint)
                 {
                     window.minSize = Vector2.zero;
@@ -176,7 +235,7 @@ namespace MomomaAssets
                     posRect.height = position.height;
                     window.position = posRect;
                 }
-                s_OnGUIInfo.Invoke(window, new object[] { });
+                GetMethodInfo("OnGUI").Invoke(window, new object[] { });
             }
         }
 
@@ -188,7 +247,7 @@ namespace MomomaAssets
             names[0] = "Current";
             for (var i = 1; i < count; ++i)
             {
-                s_GetObjectsLockedInfo.Invoke(m_InspectorWindows[i], new object[] { objects });
+                GetMethodInfo("GetObjectsLocked").Invoke(m_InspectorWindows[i], new object[] { objects });
                 names[i] = objects[0].name;
             }
             return names;
@@ -215,15 +274,18 @@ namespace MomomaAssets
             {
                 try
                 {
-                    if (!s_IsDeveloperMode)
-                        ResetEditors();
                     foreach (var win in m_InspectorWindows)
                     {
                         var tracker = s_TrackerInfo.GetValue(win) as ActiveEditorTracker;
                         if (s_IsDeveloperMode)
                         {
                             var editors = tracker.activeEditors;
-                            ReplaceEditors(editors);
+                            for (var i = 0; i < editors.Length; ++i)
+                            {
+                                var targetType = editors[i].target.GetType();
+                                ReplaceEditor(targetType, s_kSCustomEditors);
+                                ReplaceEditor(targetType, s_kSCustomMultiEditors);
+                            }
                         }
                         tracker.ForceRebuild();
                     }
@@ -231,98 +293,60 @@ namespace MomomaAssets
                 finally
                 {
                     if (s_IsDeveloperMode)
-                        ResetEditors();
+                    {
+                        ResetEditor(s_kSCustomEditors);
+                        ResetEditor(s_kSCustomMultiEditors);
+                    }
                 }
                 m_DoRebuild = false;
             }
         }
 
-        static void ReplaceEditors(Editor[] editors)
+        static void ReplaceEditor(Type targetType, IDictionary dictionary)
         {
-            for (var i = 0; i < editors.Length; ++i)
+            if (dictionary.Contains(targetType))
             {
-                var targetType = editors[i].target.GetType();
-                if (s_kSCustomEditors.Contains(targetType))
+                var monoEditorTypes = dictionary[targetType] as IList;
+                var extendedEditorIndex = -1;
+                for (var j = 0; j < monoEditorTypes.Count; ++j)
                 {
-                    var monoEditorTypes = s_kSCustomEditors[targetType] as IList;
-                    var extendedEditorIndex = -1;
-                    for (var j = 0; j < monoEditorTypes.Count; ++j)
+                    if (s_MonoEditorTypeInfos[1].GetValue(monoEditorTypes[j]) as Type == typeof(ExtendedEditor))
                     {
-                        if (s_MonoEditorTypeInfos[1].GetValue(monoEditorTypes[j]) as Type == typeof(ExtendedEditor))
-                        {
-                            extendedEditorIndex = j;
-                            break;
-                        }
-                    }
-                    if (extendedEditorIndex < 0)
-                    {
-                        var newMonoEditorType = s_MemberwiseCloneInfo.Invoke(monoEditorTypes[0], new object[] { });
-                        s_MonoEditorTypeInfos[1].SetValue(newMonoEditorType, typeof(ExtendedEditor));
-                        monoEditorTypes.Insert(0, newMonoEditorType);
-                    }
-                    else if (extendedEditorIndex > 0)
-                    {
-                        var extended = monoEditorTypes[extendedEditorIndex];
-                        monoEditorTypes.RemoveAt(extendedEditorIndex);
-                        monoEditorTypes.Insert(0, extended);
+                        extendedEditorIndex = j;
+                        break;
                     }
                 }
-                else
+                if (extendedEditorIndex < 0)
                 {
-                    var enumerator = s_kSCustomEditors.GetEnumerator();
-                    enumerator.MoveNext();
-                    var sampleList = enumerator.Value as IList;
-                    var newList = s_MemberwiseCloneInfo.Invoke(sampleList, new object[] { }) as IList;
-                    newList.Clear();
-                    newList.Add(Activator.CreateInstance(s_MonoEditorTypeType));
-                    s_MonoEditorTypeInfos[0].SetValue(newList[0], targetType);
-                    s_MonoEditorTypeInfos[1].SetValue(newList[0], typeof(ExtendedEditor));
-                    s_kSCustomEditors[targetType] = newList;
+                    var newMonoEditorType = s_MemberwiseCloneInfo.Invoke(monoEditorTypes[0], new object[] { });
+                    s_MonoEditorTypeInfos[1].SetValue(newMonoEditorType, typeof(ExtendedEditor));
+                    monoEditorTypes.Insert(0, newMonoEditorType);
                 }
-                if (s_kSCustomMultiEditors.Contains(targetType))
+                else if (extendedEditorIndex > 0)
                 {
-                    var monoEditorTypes = s_kSCustomMultiEditors[targetType] as IList;
-                    var extendedEditorIndex = -1;
-                    for (var j = 0; j < monoEditorTypes.Count; ++j)
-                    {
-                        if (s_MonoEditorTypeInfos[1].GetValue(monoEditorTypes[j]) as Type == typeof(ExtendedEditor))
-                        {
-                            extendedEditorIndex = j;
-                            break;
-                        }
-                    }
-                    if (extendedEditorIndex < 0)
-                    {
-                        var newMonoEditorType = s_MemberwiseCloneInfo.Invoke(monoEditorTypes[0], new object[] { });
-                        s_MonoEditorTypeInfos[1].SetValue(newMonoEditorType, typeof(ExtendedEditor));
-                        monoEditorTypes.Insert(0, newMonoEditorType);
-                    }
-                    else if (extendedEditorIndex > 0)
-                    {
-                        var extended = monoEditorTypes[extendedEditorIndex];
-                        monoEditorTypes.RemoveAt(extendedEditorIndex);
-                        monoEditorTypes.Insert(0, extended);
-                    }
+                    var extended = monoEditorTypes[extendedEditorIndex];
+                    monoEditorTypes.RemoveAt(extendedEditorIndex);
+                    monoEditorTypes.Insert(0, extended);
                 }
-                else
-                {
-                    var enumerator = s_kSCustomMultiEditors.GetEnumerator();
-                    enumerator.MoveNext();
-                    var sampleList = enumerator.Value as IList;
-                    var newList = s_MemberwiseCloneInfo.Invoke(sampleList, new object[] { }) as IList;
-                    newList.Clear();
-                    newList.Add(Activator.CreateInstance(s_MonoEditorTypeType));
-                    s_MonoEditorTypeInfos[0].SetValue(newList[0], targetType);
-                    s_MonoEditorTypeInfos[1].SetValue(newList[0], typeof(ExtendedEditor));
-                    s_kSCustomMultiEditors[targetType] = newList;
-                }
+            }
+            else
+            {
+                var enumerator = dictionary.GetEnumerator();
+                enumerator.MoveNext();
+                var sampleList = enumerator.Value as IList;
+                var newList = s_MemberwiseCloneInfo.Invoke(sampleList, new object[] { }) as IList;
+                newList.Clear();
+                newList.Add(Activator.CreateInstance(s_MonoEditorTypeType));
+                s_MonoEditorTypeInfos[0].SetValue(newList[0], targetType);
+                s_MonoEditorTypeInfos[1].SetValue(newList[0], typeof(ExtendedEditor));
+                dictionary[targetType] = newList;
             }
         }
 
-        static void ResetEditors()
+        static void ResetEditor(IDictionary dictionary)
         {
             var removingKeys = new List<object>();
-            foreach (DictionaryEntry entry in s_kSCustomEditors)
+            foreach (DictionaryEntry entry in dictionary)
             {
                 var val = entry.Value as IList;
                 if (val == null || val.Count == 0)
@@ -341,29 +365,7 @@ namespace MomomaAssets
             }
             foreach (var key in removingKeys)
             {
-                s_kSCustomEditors.Remove(key);
-            }
-            removingKeys = new List<object>();
-            foreach (DictionaryEntry entry in s_kSCustomMultiEditors)
-            {
-                var val = entry.Value as IList;
-                if (val == null || val.Count == 0)
-                    continue;
-                if (s_MonoEditorTypeInfos[1].GetValue(val[0]) as Type == typeof(ExtendedEditor))
-                {
-                    if (val.Count == 1)
-                    {
-                        removingKeys.Add(entry.Key);
-                    }
-                    else
-                    {
-                        val.RemoveAt(0);
-                    }
-                }
-            }
-            foreach (var key in removingKeys)
-            {
-                s_kSCustomMultiEditors.Remove(key);
+                dictionary.Remove(key);
             }
         }
 
