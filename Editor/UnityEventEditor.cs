@@ -21,9 +21,16 @@ public class UnityEventEditor : EditorWindow
 		GetUnityEventProperty();
 	}
 
+	void OnFucus()
+	{
+		GetUnityEventProperty();
+		Repaint();
+	}
+
 	void OnSelectionChange()
 	{
 		GetUnityEventProperty();
+		Repaint();
 	}
 
 	void OnGUI()

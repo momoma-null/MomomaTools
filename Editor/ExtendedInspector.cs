@@ -13,6 +13,8 @@ namespace MomomaAssets
     {
         static readonly Type s_InspectorWindowType = Type.GetType("UnityEditor.InspectorWindow, UnityEditor.dll");
         static readonly FieldInfo s_TrackerInfo = s_InspectorWindowType.GetField("m_Tracker", BindingFlags.NonPublic | BindingFlags.Instance);
+        static readonly FieldInfo s_ParentInfo = typeof(EditorWindow).GetField("m_Parent", BindingFlags.NonPublic | BindingFlags.Instance);
+        static readonly PropertyInfo s_actualViewInfo = s_ParentInfo.FieldType.GetProperty("actualView", BindingFlags.NonPublic | BindingFlags.Instance);
         static readonly Type s_CustomEditorAttributesType = Type.GetType("UnityEditor.CustomEditorAttributes, UnityEditor.dll");
         static readonly IDictionary s_kSCustomEditors = s_CustomEditorAttributesType.GetField("kSCustomEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
         static readonly IDictionary s_kSCustomMultiEditors = s_CustomEditorAttributesType.GetField("kSCustomMultiEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
@@ -29,18 +31,9 @@ namespace MomomaAssets
         int m_SelectedTabIndex;
         Vector2 m_ScrollPos;
         bool m_DoRebuild;
+        object m_Parent;
 
-        int selectedTabIndex
-        {
-            get { return m_SelectedTabIndex; }
-            set
-            {
-                if (m_SelectedTabIndex == value)
-                    return;
-                Invoke("OnLostFocus");
-                m_SelectedTabIndex = value;
-            }
-        }
+        object parent => m_Parent ?? (m_Parent = s_ParentInfo.GetValue(this));
 
         [MenuItem("MomomaTools/ExtendedInspector")]
         static void ShowWindow()
@@ -63,7 +56,7 @@ namespace MomomaAssets
         void OnEnable()
         {
             m_InspectorWindows = new List<EditorWindow>();
-            selectedTabIndex = 0;
+            m_SelectedTabIndex = 0;
             m_ScrollPos = Vector2.zero;
             autoRepaintOnSceneChange = true;
             if (s_PrevArrow == null)
@@ -81,57 +74,11 @@ namespace MomomaAssets
             Clear();
         }
 
-        void OnLostFocus()
-        {
-            Invoke("OnLostFocus");
-        }
-
-        void OnHierarchyChange()
-        {
-            if (s_IsDeveloperMode)
-                m_DoRebuild = true;
-            Repaint();
-        }
-
-        void OnSelectionChange()
-        {
-            if (s_IsDeveloperMode)
-                m_DoRebuild = true;
-            InvokeAll("OnSelectionChange");
-            Repaint();
-        }
-
-        void OnInspectorUpdate()
-        {
-            Invoke("OnInspectorUpdate");
-        }
-
-        void Update()
-        {
-            Invoke("Update");
-        }
-
-        void InvokeAll(string methodName)
-        {
-            if (m_InspectorWindows != null)
-            {
-                foreach (var win in m_InspectorWindows)
-                    GetMethodInfo(methodName).Invoke(win, new object[] { });
-            }
-        }
-
-        void Invoke(string methodName)
-        {
-            if (m_InspectorWindows != null && selectedTabIndex > -1 && selectedTabIndex < m_InspectorWindows.Count)
-            {
-                GetMethodInfo(methodName).Invoke(m_InspectorWindows[selectedTabIndex], new object[] { });
-            }
-        }
-
         void OnGUI()
         {
             if (EditorApplication.isCompiling)
             {
+                EditorGUILayout.HelpBox("Compiling...", MessageType.Info);
                 Clear();
                 return;
             }
@@ -144,11 +91,12 @@ namespace MomomaAssets
             if (m_InspectorWindows.Count < 1)
             {
                 m_InspectorWindows.Add(ScriptableObject.CreateInstance(s_InspectorWindowType) as EditorWindow);
+                s_ParentInfo.SetValue(m_InspectorWindows[0], parent);
             }
 
             using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
             {
-                selectedTabIndex = Mathf.Clamp(selectedTabIndex, 0, m_InspectorWindows.Count - 1);
+                m_SelectedTabIndex = Mathf.Clamp(m_SelectedTabIndex, 0, m_InspectorWindows.Count - 1);
                 var names = GetObjectNames();
                 var scrollPosMax = 0f;
                 using (var horizontal = new EditorGUILayout.HorizontalScope())
@@ -157,10 +105,10 @@ namespace MomomaAssets
                 {
                     scrollPosMax = innerHorizontal.rect.width - horizontal.rect.width;
                     EditorGUI.BeginChangeCheck();
-                    var newSelectedTabIndex = GUILayout.Toolbar(selectedTabIndex, names, EditorStyles.toolbarButton, GUI.ToolbarButtonSize.FitToContents);
+                    var newSelectedTabIndex = GUILayout.Toolbar(m_SelectedTabIndex, names, EditorStyles.toolbarButton, GUI.ToolbarButtonSize.FitToContents);
                     if (EditorGUI.EndChangeCheck())
                     {
-                        selectedTabIndex = newSelectedTabIndex;
+                        m_SelectedTabIndex = newSelectedTabIndex;
                     }
                     if (Event.current.delta != Vector2.zero && horizontal.rect.Contains(Event.current.mousePosition - m_ScrollPos + horizontal.rect.min))
                     {
@@ -173,24 +121,24 @@ namespace MomomaAssets
                 }
                 using (var check = new EditorGUI.ChangeCheckScope())
                 {
-                    using (new EditorGUI.DisabledScope(selectedTabIndex <= 0))
+                    using (new EditorGUI.DisabledScope(m_SelectedTabIndex <= 0))
                     {
                         if (GUILayout.Button(s_PrevArrow, EditorStyles.toolbarButton))
                         {
-                            --selectedTabIndex;
+                            --m_SelectedTabIndex;
                         }
                     }
-                    using (new EditorGUI.DisabledScope(selectedTabIndex >= m_InspectorWindows.Count - 1))
+                    using (new EditorGUI.DisabledScope(m_SelectedTabIndex >= m_InspectorWindows.Count - 1))
                     {
                         if (GUILayout.Button(s_NextArrow, EditorStyles.toolbarButton))
                         {
-                            ++selectedTabIndex;
+                            ++m_SelectedTabIndex;
                         }
                     }
                     if (check.changed)
                     {
                         m_ScrollPos.x = 0f;
-                        for (var i = 0; i < selectedTabIndex; ++i)
+                        for (var i = 0; i < m_SelectedTabIndex; ++i)
                         {
                             if (i > 0)
                                 m_ScrollPos.x += Math.Max(EditorStyles.toolbarButton.margin.right, EditorStyles.toolbarButton.margin.left);
@@ -205,15 +153,16 @@ namespace MomomaAssets
                     {
                         var newInspectorWindow = ScriptableObject.CreateInstance(s_InspectorWindowType) as EditorWindow;
                         GetMethodInfo("SetObjectsLocked").Invoke(newInspectorWindow, new object[] { Selection.objects.ToList() });
+                        s_ParentInfo.SetValue(newInspectorWindow, parent);
                         m_InspectorWindows.Add(newInspectorWindow);
-                        selectedTabIndex = m_InspectorWindows.Count - 1;
+                        m_SelectedTabIndex = m_InspectorWindows.Count - 1;
                     }
                 }
-                using (new EditorGUI.DisabledScope(selectedTabIndex == 0))
+                using (new EditorGUI.DisabledScope(m_SelectedTabIndex == 0))
                 {
                     if (GUILayout.Button("-", EditorStyles.toolbarButton))
                     {
-                        DestroyImmediate(m_InspectorWindows[selectedTabIndex]);
+                        DestroyImmediate(m_InspectorWindows[m_SelectedTabIndex]);
                         Repaint();
                         return;
                     }
@@ -227,13 +176,16 @@ namespace MomomaAssets
 
             using (var cellLayout = new EditorGUILayout.VerticalScope(GUILayout.Width(position.width)))
             {
-                var window = m_InspectorWindows[selectedTabIndex];
+                var window = m_InspectorWindows[m_SelectedTabIndex];
+                s_actualViewInfo.SetValue(parent, window);
                 if (Event.current.type == EventType.Repaint)
                 {
+                    s_ParentInfo.SetValue(window, null);
                     window.minSize = Vector2.zero;
                     var posRect = cellLayout.rect;
                     posRect.height = position.height;
                     window.position = posRect;
+                    s_ParentInfo.SetValue(window, parent);
                 }
                 GetMethodInfo("OnGUI").Invoke(window, new object[] { });
             }
@@ -270,16 +222,21 @@ namespace MomomaAssets
 
         void DoRebuild()
         {
-            if (m_DoRebuild)
+            if (s_IsDeveloperMode || m_DoRebuild)
             {
                 try
                 {
+                    if (s_IsDeveloperMode)
+                        m_DoRebuild = false;
                     foreach (var win in m_InspectorWindows)
                     {
                         var tracker = s_TrackerInfo.GetValue(win) as ActiveEditorTracker;
                         if (s_IsDeveloperMode)
                         {
                             var editors = tracker.activeEditors;
+                            if (!Array.Exists(editors, e => !(e is ExtendedEditor)))
+                                continue;
+                            m_DoRebuild = true;
                             for (var i = 0; i < editors.Length; ++i)
                             {
                                 var targetType = editors[i].target.GetType();
@@ -292,13 +249,13 @@ namespace MomomaAssets
                 }
                 finally
                 {
-                    if (s_IsDeveloperMode)
+                    if (s_IsDeveloperMode && m_DoRebuild)
                     {
                         ResetEditor(s_kSCustomEditors);
                         ResetEditor(s_kSCustomMultiEditors);
                     }
+                    m_DoRebuild = false;
                 }
-                m_DoRebuild = false;
             }
         }
 
