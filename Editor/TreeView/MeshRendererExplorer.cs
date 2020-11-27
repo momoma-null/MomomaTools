@@ -8,8 +8,16 @@ using UnityEditor.IMGUI.Controls;
 
 namespace MomomaAssets
 {
+
     class MeshRendererExplorer : EditorWindow
     {
+        const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
+        const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
+        const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
+        const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
+
+        static readonly string[] s_TabNames = new string[] { "Count", "Static", "Lighting", "Lightmap" };
+
         int meshrendererNum;
         int materialsNum;
         int originalMaterialsNum;
@@ -17,16 +25,11 @@ namespace MomomaAssets
         int textureNum;
         int textureSize;
 
-        int selectedTab;
-        GameObject rootGO;
-        bool includeInactive;
-        SearchField searchField;
-        UnityObjectTreeViewBase treeView;
-
-        const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
-        const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
-        const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
-        const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
+        int m_SelectedTabIndex;
+        GameObject m_RootGameObject;
+        bool m_IncludeInactive;
+        SearchField m_SearchField;
+        UnityObjectTreeViewBase m_TreeView;
 
         [MenuItem("MomomaTools/MeshRendererExplorer")]
         static void ShowWindow()
@@ -34,10 +37,109 @@ namespace MomomaAssets
             EditorWindow.GetWindow<MeshRendererExplorer>("MeshRendererExplorer");
         }
 
-        public void OnHierarchyChange()
+        void OnEnable()
         {
-            treeView?.OnHierarchyChange();
+            minSize = new Vector2(500f, 250f);
+            m_SearchField = new SearchField();
+        }
+
+        void OnHierarchyChange()
+        {
+            m_TreeView?.OnHierarchyChange();
             CountReset();
+            Repaint();
+        }
+
+        void OnSelectionChange()
+        {
+            m_TreeView?.SetSelection(Selection.instanceIDs);
+            Repaint();
+        }
+
+        void OnGUI()
+        {
+            EditorGUILayout.Space();
+            EditorGUI.BeginChangeCheck();
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.FlexibleSpace();
+                m_SelectedTabIndex = GUILayout.Toolbar(m_SelectedTabIndex, s_TabNames, "LargeButton", GUILayout.MaxWidth(500));
+                GUILayout.FlexibleSpace();
+            }
+            var changedTab = EditorGUI.EndChangeCheck();
+            EditorGUILayout.Space();
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.Space();
+                using (new EditorGUILayout.VerticalScope())
+                {
+                    using (var check = new EditorGUI.ChangeCheckScope())
+                    {
+                        m_RootGameObject = EditorGUILayout.ObjectField("Root GameObject", m_RootGameObject, typeof(GameObject), true) as GameObject;
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            m_IncludeInactive = GUILayout.Toggle(m_IncludeInactive, "Include Inactive GameObject");
+                            if (check.changed)
+                                OnHierarchyChange();
+                            if (m_SelectedTabIndex > 0)
+                            {
+                                if (changedTab || m_TreeView == null)
+                                {
+                                    switch (m_SelectedTabIndex)
+                                    {
+                                        case 1:
+                                            InitializeStaticTab();
+                                            break;
+                                        case 2:
+                                            InitializeLightingTab();
+                                            break;
+                                        case 3:
+                                            InitializeLightmapTab();
+                                            break;
+                                        default:
+                                            throw new System.InvalidOperationException("tab number is invalid");
+                                    }
+                                }
+                                EditorGUI.BeginChangeCheck();
+                                var searchString = m_SearchField.OnToolbarGUI(m_TreeView.searchString);
+                                if (EditorGUI.EndChangeCheck())
+                                {
+                                    SessionState.SetString(searchStringStateKey, searchString);
+                                    m_TreeView.searchString = searchString;
+                                }
+                            }
+                        }
+                    }
+                    if (m_SelectedTabIndex == 0)
+                    {
+                        if (GUILayout.Button("Copy to Clipboard", GUILayout.ExpandWidth(false)))
+                        {
+                            CopyCountToClipBoard();
+                        }
+
+                        if (GUILayout.Button("Count", GUILayout.Height(36f), GUILayout.Width(108f)))
+                        {
+                            CountMesh();
+                        }
+
+                        EditorGUILayout.LabelField("Mesh Renderer", meshrendererNum.ToString());
+                        EditorGUILayout.LabelField("Materials", materialsNum.ToString());
+                        EditorGUILayout.LabelField("Original Materials", originalMaterialsNum.ToString());
+                        EditorGUILayout.LabelField("Triangles", triangleNum.ToString());
+                        EditorGUILayout.LabelField("Textures", textureNum.ToString());
+                        EditorGUILayout.LabelField("TextureSize", "1024 *1024 * " + (textureSize / 1024f).ToString("N"));
+                        GUILayoutUtility.GetRect(0, float.MaxValue, 0, float.MaxValue);
+                    }
+                    else
+                    {
+                        var rect = GUILayoutUtility.GetRect(0, float.MaxValue, 0, float.MaxValue);
+                        m_TreeView.OnGUI(rect);
+                    }
+                }
+                EditorGUILayout.Space();
+            }
+            EditorGUILayout.Space();
         }
 
         void InitializeStaticTab()
@@ -52,10 +154,8 @@ namespace MomomaAssets
             header.AddtoList("Navigation", 30, item => item.NavigationStatic, (item, value) => item.NavigationStatic = (bool)value, item => item.m_StaticEditorFlags);
             header.AddtoList("OffMeshLink", 30, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = (bool)value, item => item.m_StaticEditorFlags);
             header.AddtoList("Reflection", 30, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = (bool)value, item => item.m_StaticEditorFlags);
-            treeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
-            treeView.searchString = SessionState.GetString(searchStringStateKey, "");
-            searchField = new SearchField();
-            searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
+            m_TreeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
+            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
         void InitializeLightingTab()
@@ -67,10 +167,8 @@ namespace MomomaAssets
             header.AddtoList("ProbeAnchor", 50, item => item.m_ProbeAnchor);
             header.AddtoList("CastShadows", 50, item => item.m_CastShadows);
             header.AddtoList("ReceiveShadows", 30, item => item.m_ReceiveShadows);
-            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
-            treeView.searchString = SessionState.GetString(searchStringStateKey, "");
-            searchField = new SearchField();
-            searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
+            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
+            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
         void InitializeLightmapTab()
@@ -80,84 +178,8 @@ namespace MomomaAssets
             header.AddtoList("ScaleInLightmap", 50, item => item.m_ScaleInLightmap);
             header.AddtoList("PrioritizeIllumination", 30, item => item.m_ImportantGI);
             header.AddtoList("StitchSeams", 30, item => item.m_StitchLightmapSeams);
-            treeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
-            treeView.searchString = SessionState.GetString(searchStringStateKey, "");
-            searchField = new SearchField();
-            searchField.downOrUpArrowKeyPressed += treeView.SetFocusAndEnsureSelectedItem;
-        }
-
-        void OnGUI()
-        {
-            EditorGUI.BeginChangeCheck();
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                GUILayout.FlexibleSpace();
-                selectedTab = GUILayout.Toolbar(selectedTab, new string[] { "Count", "Static", "Lighting", "Lightmap" }, GUILayout.MaxWidth(500));
-                GUILayout.FlexibleSpace();
-            }
-            var changedTab = EditorGUI.EndChangeCheck();
-
-            using (var check = new EditorGUI.ChangeCheckScope())
-            {
-                rootGO = EditorGUILayout.ObjectField("Root GameObject", rootGO, typeof(GameObject), true) as GameObject;
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    includeInactive = GUILayout.Toggle(includeInactive, "Include Inactive GameObject");
-                    if (check.changed)
-                        OnHierarchyChange();
-                    if (selectedTab > 0)
-                    {
-                        switch (selectedTab)
-                        {
-                            case 1:
-                                if (changedTab || treeView == null)
-                                    InitializeStaticTab();
-                                break;
-                            case 2:
-                                if (changedTab || treeView == null)
-                                    InitializeLightingTab();
-                                break;
-                            case 3:
-                                if (changedTab || treeView == null)
-                                    InitializeLightmapTab();
-                                break;
-                            default:
-                                throw new System.InvalidOperationException("column property is unknown type");
-                        }
-                        EditorGUI.BeginChangeCheck();
-                        var searchString = searchField.OnToolbarGUI(treeView.searchString);
-                        if (EditorGUI.EndChangeCheck())
-                        {
-                            SessionState.SetString(searchStringStateKey, searchString);
-                            treeView.searchString = searchString;
-                        }
-                    }
-                }
-            }
-
-            if (selectedTab == 0)
-            {
-                if (GUILayout.Button("Copy to Clipboard", GUILayout.ExpandWidth(false)))
-                {
-                    CopyCountToClipBoard();
-                }
-
-                if (GUILayout.Button("Count", GUILayout.Height(36f), GUILayout.Width(108f)))
-                {
-                    CountMesh();
-                }
-
-                EditorGUILayout.LabelField("Mesh Renderer", meshrendererNum.ToString());
-                EditorGUILayout.LabelField("Materials", materialsNum.ToString());
-                EditorGUILayout.LabelField("Original Materials", originalMaterialsNum.ToString());
-                EditorGUILayout.LabelField("Triangles", triangleNum.ToString());
-                EditorGUILayout.LabelField("Textures", textureNum.ToString());
-                EditorGUILayout.LabelField("TextureSize", "1024 *1024 * " + (textureSize / 1024f).ToString("N"));
-            }
-            else
-            {
-                treeView.OnGUI(new Rect(20, 60, position.width - 40, position.height - 60));
-            }
+            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
+            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
         IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems(bool isGameObject = false, bool isLightmapStatic = false)
@@ -169,14 +191,14 @@ namespace MomomaAssets
                 return mrs.Select(mr => new MeshRendererTreeViewItem(mr.gameObject.GetInstanceID(), mr)).ToArray();
         }
 
-        IEnumerable<MeshRenderer> GetMeshRenderers(bool isLightmapStatic = false)
+        ICollection<MeshRenderer> GetMeshRenderers(bool isLightmapStatic = false)
         {
             var meshRenderers = new HashSet<MeshRenderer>();
-            if (rootGO)
+            if (m_RootGameObject)
             {
-                if (includeInactive || rootGO.activeInHierarchy)
+                if (m_IncludeInactive || m_RootGameObject.activeInHierarchy)
                 {
-                    meshRenderers.UnionWith(rootGO.GetComponentsInChildren<MeshRenderer>());
+                    meshRenderers.UnionWith(m_RootGameObject.GetComponentsInChildren<MeshRenderer>());
                 }
             }
             else
@@ -187,13 +209,13 @@ namespace MomomaAssets
                     var rootObjs = scene.GetRootGameObjects();
                     foreach (var rootObj in rootObjs)
                     {
-                        if (includeInactive || rootObj.activeInHierarchy)
+                        if (m_IncludeInactive || rootObj.activeInHierarchy)
                             meshRenderers.UnionWith(rootObj.GetComponentsInChildren<MeshRenderer>());
                     }
 
                 }
             }
-            if (!includeInactive)
+            if (!m_IncludeInactive)
                 meshRenderers.RemoveWhere(mr => !mr.enabled);
             if (isLightmapStatic)
                 meshRenderers.RemoveWhere(mr => !GameObjectUtility.AreStaticEditorFlagsSet(mr.gameObject, StaticEditorFlags.LightmapStatic));
@@ -218,8 +240,7 @@ namespace MomomaAssets
             var meshRendererList = GetMeshRenderers();
             foreach (var mr in meshRendererList)
             {
-                ++meshrendererNum;
-                triangleNum += mr.GetComponent<MeshFilter>()?.sharedMesh.triangles.Length / 3 ?? 0;
+                triangleNum += mr.GetComponent<MeshFilter>()?.sharedMesh?.triangles.Length / 3 ?? 0;
                 var materialArray = mr.sharedMaterials;
                 materialsNum += materialArray.Length;
                 foreach (var mat in materialArray)
@@ -241,6 +262,7 @@ namespace MomomaAssets
                     }
                 }
             }
+            meshrendererNum = meshRendererList.Count;
             originalMaterialsNum = originalMaterials.Count;
             textureNum = originalTextures.Count;
         }
@@ -355,4 +377,5 @@ namespace MomomaAssets
             }
         }
     }
+
 }// namespace MomomaAssets
