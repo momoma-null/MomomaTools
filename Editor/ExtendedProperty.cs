@@ -27,6 +27,8 @@ namespace MomomaAssets
         static void OnMenu(GenericMenu menu, SerializedProperty property)
         {
             property = property.Copy();
+            menu.AddItem(new GUIContent("Copy Property Path"), false, () => EditorGUIUtility.systemCopyBuffer = property.propertyPath);
+            menu.AddSeparator(null);
             switch (property.propertyType)
             {
                 case SerializedPropertyType.ObjectReference:
