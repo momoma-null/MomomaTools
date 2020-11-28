@@ -22,6 +22,12 @@ namespace MomomaAssets
             Undefined
         }
 
+        [MenuItem("Assets/Create/Auto Material", true, 301)]
+        static bool CreateAutoMaterialValidate()
+        {
+            return Selection.activeObject is Texture2D;
+        }
+
         [MenuItem("Assets/Create/Auto Material", false, 301)]
         static void CreateAutoMaterial()
         {
