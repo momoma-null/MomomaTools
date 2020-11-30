@@ -60,7 +60,7 @@ namespace MomomaAssets
             AddStyleSheetPath("TextureGraphStyles");
             var background = new GridBackground();
             Insert(0, background);
-            m_PreviewImage = new Image() { scaleMode = ScaleMode.ScaleToFit, style = { positionType = PositionType.Absolute, marginLeft = 20f, marginTop = 20f, height = 64f, width = 64f } };
+            m_PreviewImage = new Image() { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore, style = { positionType = PositionType.Absolute, marginLeft = 20f, marginTop = 20f, height = 128f, width = 128f } };
             Insert(1, m_PreviewImage);
             this.AddManipulator(new SelectionDragger());
             this.AddManipulator(new ContentDragger());
@@ -78,14 +78,18 @@ namespace MomomaAssets
         {
             var compatiblePorts = new List<Port>();
             m_RelativePorts = new HashSet<Port>();
-            var container = startAnchor.direction == Direction.Input ? startAnchor.node.outputContainer : startAnchor.node.inputContainer;
+            var isInput = startAnchor.direction == Direction.Input;
+            var container = isInput ? startAnchor.node.outputContainer : startAnchor.node.inputContainer;
             foreach (Port port in container)
             {
                 FindPortRecursively(port);
             }
             foreach (var port in ports.ToList())
             {
-                if (startAnchor.node == port.node || startAnchor.direction == port.direction || startAnchor.portType != port.portType || m_RelativePorts.Contains(port))
+                if (startAnchor.node == port.node
+                 || startAnchor.direction == port.direction
+                 || !(isInput ? startAnchor.portType.IsAssignableFrom(port.portType) : port.portType.IsAssignableFrom(startAnchor.portType))
+                 || m_RelativePorts.Contains(port))
                     continue;
                 compatiblePorts.Add(port);
             }
@@ -113,7 +117,6 @@ namespace MomomaAssets
             if (m_PreviewImage.image.value != null)
                 UnityEngine.Object.DestroyImmediate(m_PreviewImage.image.value);
             m_PreviewImage.image = texture;
-            Debug.Log(texture.GetPixel(16, 16).ToString());
             return change;
         }
 
@@ -121,7 +124,7 @@ namespace MomomaAssets
         {
             if (m_PreviewImage?.image != null)
             {
-                UnityEngine.Object.DestroyImmediate(m_PreviewImage.image);
+                UnityEngine.Object.DestroyImmediate(m_PreviewImage.image.value);
             }
         }
 
@@ -155,6 +158,7 @@ namespace MomomaAssets
             exportTextureNode.Process();
             var texture = new Texture2D(width, height, TextureFormat.ARGB32, false);
             texture.SetPixels32(exportTextureNode.colors);
+            texture.Apply();
             return texture;
         }
     }
@@ -229,6 +233,7 @@ namespace MomomaAssets
             outputContainer.Add(outputPort);
             RefreshPorts();
             objectField = new ObjectField() { objectType = typeof(Texture2D) };
+            objectField.OnValueChanged(e => graph.graphViewChanged.Invoke(new GraphViewChange()));
             extensionContainer.Add(objectField);
             RefreshExpandedState();
         }
@@ -240,16 +245,13 @@ namespace MomomaAssets
             var texture = objectField.value as Texture2D;
             if (texture == null)
                 texture = Texture2D.blackTexture;
-            var renderTexture = new RenderTexture(graph.width, graph.height, 1, RenderTextureFormat.ARGB32);
-            Graphics.Blit(texture, renderTexture);
-            var currentRT = RenderTexture.active;
-            RenderTexture.active = renderTexture;
+            var renderTexture = RenderTexture.GetTemporary(graph.width, graph.height, 1, RenderTextureFormat.ARGB32);
             var readableTexture = new Texture2D(graph.width, graph.height, TextureFormat.ARGB32, false);
+            Graphics.Blit(texture, renderTexture);
             readableTexture.ReadPixels(new Rect(0, 0, graph.width, graph.height), 0, 0);
             readableTexture.Apply();
             var colors = readableTexture.GetPixels32();
-            RenderTexture.active = currentRT;
-            UnityEngine.Object.DestroyImmediate(renderTexture);
+            RenderTexture.ReleaseTemporary(renderTexture);
             UnityEngine.Object.DestroyImmediate(readableTexture);
             var port = outputContainer.Q<Port>();
             graph.processData[port] = colors;
@@ -424,6 +426,77 @@ namespace MomomaAssets
             }
             port = outputContainer.Q<Port>();
             graph.processData[port] = colors;
+        }
+    }
+
+    class MathNode : TextureGraphNode
+    {
+        enum CalculateMode
+        {
+            Add,
+            Subtract,
+            Reverse
+        }
+
+        readonly EnumField m_EnumField;
+
+        internal MathNode()
+        {
+            title = "Math";
+            var inputPort = Port.Create<Edge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(byte));
+            inputPort.name = "A";
+            inputPort.portName = "A";
+            inputContainer.Add(inputPort);
+            inputPort = Port.Create<Edge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(byte));
+            inputPort.name = "B";
+            inputPort.portName = "B";
+            inputContainer.Add(inputPort);
+            var outputPort = Port.Create<Edge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(byte));
+            outputPort.portName = "Out";
+            outputContainer.Add(outputPort);
+            RefreshPorts();
+            m_EnumField = new EnumField(CalculateMode.Add);
+            extensionContainer.Add(m_EnumField);
+            RefreshExpandedState();
+        }
+
+        internal override void Process()
+        {
+            if (IsProcessed())
+                return;
+            var valueA = new byte[graph.width * graph.height];
+            var valueB = new byte[graph.width * graph.height];
+            var result = new byte[graph.width * graph.height];
+            var port = inputContainer.Q<Port>("A");
+            foreach (var edge in port.connections)
+            {
+                var outNode = edge.output.node as TextureGraphNode;
+                outNode.Process();
+                valueA = graph.processData[edge.output] as byte[];
+            }
+            port = inputContainer.Q<Port>("B");
+            foreach (var edge in port.connections)
+            {
+                var outNode = edge.output.node as TextureGraphNode;
+                outNode.Process();
+                valueB = graph.processData[edge.output] as byte[];
+            }
+            switch (m_EnumField.value)
+            {
+                case CalculateMode.Add:
+                    result = valueA.Select((v, i) => Convert.ToByte(v + valueB[i])).ToArray();
+                    break;
+                case CalculateMode.Subtract:
+                    result = valueA.Select((v, i) => Convert.ToByte(v - valueB[i])).ToArray();
+                    break;
+                case CalculateMode.Reverse:
+                    result = valueA.Select(v => Convert.ToByte(byte.MaxValue - v)).ToArray();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException("invalid enum value (CalculateMode)");
+            }
+            port = outputContainer.Q<Port>();
+            graph.processData[port] = result;
         }
     }
 
