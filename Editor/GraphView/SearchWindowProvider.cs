@@ -29,7 +29,7 @@ namespace MomomaAssets
 
         public bool OnSelectEntry(SearchTreeEntry entry, SearchWindowContext context)
         {
-            var type = entry.userData as System.Type;
+            var type = entry.userData as Type;
             var node = Activator.CreateInstance(type, true) as Node;
             graphView.AddElement(node);
             graphView.Recalculate();

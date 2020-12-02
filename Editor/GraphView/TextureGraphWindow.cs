@@ -37,6 +37,15 @@ namespace MomomaAssets
         {
             m_TextureGraph.OnDisable();
         }
+
+        void OnInspectorUpdate()
+        {
+            if (m_TextureGraph != null && m_TextureGraph.isNordDirty)
+            {
+                m_TextureGraph.isNordDirty = false;
+                m_TextureGraph.Recalculate();
+            }
+        }
     }
 
     class TextureGraph : GraphView
@@ -48,8 +57,12 @@ namespace MomomaAssets
 
         readonly Image m_PreviewImage;
 
-        internal int width => exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value;
-        internal int height => exportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value;
+        internal bool isNordDirty = false;
+
+        internal int width => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
+        internal int height => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value : 128;
+
+        bool isProduction = false;
 
         internal TextureGraph(TextureGraphWindow window) : base()
         {
@@ -68,7 +81,6 @@ namespace MomomaAssets
             var searchWindowProvider = ScriptableObject.CreateInstance<SearchWindowProvider>();
             searchWindowProvider.graphView = this;
             nodeCreationRequest += context => SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), searchWindowProvider);
-            graphViewChanged += OnGraphViewChanged;
         }
 
         public override List<Port> GetCompatiblePorts(Port startAnchor, NodeAdapter nodeAdapter)
@@ -118,13 +130,31 @@ namespace MomomaAssets
             return false;
         }
 
-        GraphViewChange OnGraphViewChanged(GraphViewChange change)
+        internal static T AssignTo<T>(object obj)
         {
-            if (change.edgesToCreate?.Count > 0 || change.elementsToRemove?.Count > 0)
+            var fromType = obj.GetType();
+            var toType = typeof(T);
+            if (toType.IsAssignableFrom(fromType))
+                return (T)obj;
+            if (toType == typeof(float))
             {
-                Recalculate();
+                if (obj is Vector4 vector4)
+                    return (T)(object)vector4.x;
+                else if (obj is Vector3 vector3)
+                    return (T)(object)vector3.x;
+                else if (obj is Vector2 vector2)
+                    return (T)(object)vector2.x;
             }
-            return change;
+            else if (obj is float f)
+            {
+                if (toType == typeof(Vector4))
+                    return (T)(object)new Vector4(f, f, f, f);
+                else if (toType == typeof(Vector3))
+                    return (T)(object)new Vector3(f, f, f);
+                else if (toType == typeof(Vector2))
+                    return (T)(object)new Vector2(f, f);
+            }
+            throw new InvalidCastException(fromType.Name + " can't cast " + toType.Name);
         }
 
         internal void Recalculate()
@@ -133,6 +163,7 @@ namespace MomomaAssets
             if (m_PreviewImage?.image.value != null)
                 UnityEngine.Object.DestroyImmediate(m_PreviewImage.image.value);
             m_PreviewImage.image = texture;
+            Debug.Log("Recalculate");
         }
 
         internal void OnDisable()
@@ -150,7 +181,9 @@ namespace MomomaAssets
 
         internal void SaveTexture()
         {
+            isProduction = true;
             var texture = ProcessAll();
+            isProduction = false;
             var bytes = texture.EncodeToPNG();
             UnityEngine.Object.DestroyImmediate(texture);
             var path = AssetDatabase.GetAssetPath(graphData);
@@ -171,10 +204,33 @@ namespace MomomaAssets
         {
             processData.Clear();
             exportTextureNode.Process();
-            var texture = new Texture2D(width, height, TextureFormat.ARGB32, false);
+            var texture = new Texture2D(width, height, TextureFormat.RGBAFloat, false);
             texture.SetPixels(exportTextureNode.colors);
             texture.Apply();
             return texture;
+        }
+    }
+
+    class TextureGraphEdge : Edge
+    {
+        TextureGraph m_Graph;
+        TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
+
+        bool isConnected = false;
+
+        public TextureGraphEdge() : base() { }
+
+        public override void OnPortChanged(bool isInput)
+        {
+            base.OnPortChanged(isInput);
+            if (isGhostEdge || graph == null)
+                return;
+            if ((input != null && output != null)
+             || (input == null && output == null && isConnected))
+            {
+                isConnected = true;
+                graph.isNordDirty = true;
+            }
         }
     }
 

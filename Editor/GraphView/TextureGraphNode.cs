@@ -1,9 +1,9 @@
 ﻿using System;
+using System.Reflection;
 using System.Linq;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
-using UnityEngine.Profiling;
 using UnityEngine.Experimental.UIElements;
 using UnityEngine.Experimental.UIElements.StyleEnums;
 using UnityEditor;
@@ -15,8 +15,16 @@ namespace MomomaAssets
 
     abstract class TextureGraphNode : Node
     {
+        protected static readonly Color s_BackgroundColor = new Color(0.1803922f, 0.1803922f, 0.1803922f, 0.8039216f);
+
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
+
+        protected TextureGraphNode() : base()
+        {
+            style.maxWidth = 150f;
+            extensionContainer.style.backgroundColor = s_BackgroundColor;
+        }
 
         public override void SetPosition(Rect newPos)
         {
@@ -47,23 +55,38 @@ namespace MomomaAssets
             var port = inputContainer.Q<Port>(portName);
             foreach (var edge in port.connections)
             {
+                if (edge.output == null)
+                    continue;
                 var outNode = edge.output.node as TextureGraphNode;
                 outNode.Process();
-                inputValue = graph.processData[edge.output] as T[];
+                var rawData = graph.processData[edge.output];
+                if (rawData is T[])
+                {
+                    inputValue = rawData as T[];
+                }
+                else
+                {
+                    var castedData = new List<T>();
+                    foreach (var i in (rawData as IEnumerable))
+                    {
+                        castedData.Add(TextureGraph.AssignTo<T>(i));
+                    }
+                    inputValue = castedData.ToArray();
+                }
             }
         }
 
         protected Port AddInputPort<T>(string portName = null)
         {
-            var port = Port.Create<Edge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(T));
+            var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(T));
             port.portName = portName;
             inputContainer.Add(port);
             return port;
         }
-        
+
         protected Port AddOutputPort<T>(string portName = null)
         {
-            var port = Port.Create<Edge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(T));
+            var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(T));
             port.portName = portName;
             outputContainer.Add(port);
             return port;
@@ -75,43 +98,64 @@ namespace MomomaAssets
         readonly ObjectField objectField;
         readonly Image image;
 
-        internal ImportTextureNode()
+        int m_Width;
+        int m_Height;
+
+        internal ImportTextureNode() : base()
         {
             title = "Import Texture";
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
             objectField = new ObjectField() { objectType = typeof(Texture2D) };
-            objectField.OnValueChanged(e => OnValueChanged(e.newValue as Texture2D));
+            objectField.StretchToParentWidth();
+            objectField.OnValueChanged(e => OnValueChanged());
             extensionContainer.Add(objectField);
-            image = new Image() { image = Texture.Instantiate(Texture2D.blackTexture), style = { maxWidth = 128f, maxHeight = 128f } };
+            image = new Image() { style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
             extensionContainer.Add(image);
             RefreshExpandedState();
         }
 
-        void OnValueChanged(Texture2D newTexture)
+        ~ImportTextureNode()
         {
-            if (newTexture == null)
-                newTexture = Texture.Instantiate(Texture2D.blackTexture);
-            var width = graph.width;
-            var height = graph.height;
-            var newImage = new Texture2D(width, height, TextureFormat.RGBAFloat, false, false);
-            var renderTexture = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGBFloat);
-            Graphics.Blit(newTexture, renderTexture);
-            newImage.ReadPixels(new Rect(0, 0, width, height), 0, 0, false);
-            newImage.Apply();
-            RenderTexture.ReleaseTemporary(renderTexture);
             if (image.image.value != null)
                 Texture.DestroyImmediate(image.image);
+        }
+
+        void OnValueChanged()
+        {
+            ReloadTexture();
+            graph.Recalculate();
+        }
+
+        void ReloadTexture()
+        {
+            if (image.image.value != null)
+                Texture.DestroyImmediate(image.image);
+            m_Width = graph.width;
+            m_Height = graph.height;
+            var srcTexture = objectField.value as Texture2D;
+            if (srcTexture == null)
+            {
+                image.image = null;
+                return;
+            }
+            var newImage = new Texture2D(m_Width, m_Height, TextureFormat.RGBAFloat, false);
+            var renderTexture = RenderTexture.GetTemporary(m_Width, m_Height, 0, RenderTextureFormat.ARGBFloat);
+            Graphics.Blit(srcTexture, renderTexture);
+            newImage.ReadPixels(new Rect(0, 0, m_Width, m_Height), 0, 0, false);
+            newImage.Apply();
+            RenderTexture.ReleaseTemporary(renderTexture);
             image.image = newImage;
-            graph.graphViewChanged.Invoke(new GraphViewChange());
         }
 
         internal override void Process()
         {
             if (IsProcessed())
                 return;
+            if (m_Width != graph.width || m_Height != graph.height)
+                ReloadTexture();
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = (image.image.value as Texture2D).GetRawTextureData<Vector4>().ToArray();
+            graph.processData[port] = (image.image.value as Texture2D)?.GetRawTextureData<Vector4>().ToArray() ?? new Vector4[m_Width * m_Height];
         }
     }
 
@@ -125,7 +169,7 @@ namespace MomomaAssets
         readonly PopupField<int> widthPopupField;
         readonly PopupField<int> heightPopupField;
 
-        internal ExportTextureNode()
+        internal ExportTextureNode() : base()
         {
             title = "Export Texture";
             capabilities = capabilities & ~Capabilities.Deletable;
@@ -133,6 +177,9 @@ namespace MomomaAssets
             RefreshPorts();
             widthPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Width" };
             heightPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Height" };
+            widthPopupField.OnValueChanged(e => heightPopupField.value = e.newValue);
+            widthPopupField.OnValueChanged(e => graph.Recalculate());
+            heightPopupField.SetEnabled(false);
             extensionContainer.Add(widthPopupField);
             extensionContainer.Add(heightPopupField);
             RefreshExpandedState();
@@ -140,8 +187,8 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            var width = widthPopupField.value;
-            var height = heightPopupField.value;
+            var width = graph.width;
+            var height = graph.height;
             m_Colors = new Color[width * height];
             var vectors = new Vector4[width * height];
             GetInput<Vector4>(ref vectors);
@@ -151,7 +198,7 @@ namespace MomomaAssets
 
     class DecomposeChannelsNode : TextureGraphNode
     {
-        internal DecomposeChannelsNode()
+        internal DecomposeChannelsNode() : base()
         {
             title = "Decompose Channels";
             AddInputPort<Vector4>("Color");
@@ -197,7 +244,7 @@ namespace MomomaAssets
 
     class CombineChannelsNode : TextureGraphNode
     {
-        internal CombineChannelsNode()
+        internal CombineChannelsNode() : base()
         {
             title = "Combine Channels";
             var port = AddInputPort<float>("R");
@@ -241,7 +288,7 @@ namespace MomomaAssets
 
         readonly EnumField m_EnumField;
 
-        internal MathNode()
+        internal MathNode() : base()
         {
             title = "Math";
             var port = AddInputPort<float>("A");
@@ -250,7 +297,7 @@ namespace MomomaAssets
             port.name = "B";
             AddOutputPort<float>("Out");
             RefreshPorts();
-            m_EnumField = new EnumField(CalculateMode.Add);
+            m_EnumField = new EnumField(CalculateMode.Add) { style = { backgroundColor = s_BackgroundColor } };
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
