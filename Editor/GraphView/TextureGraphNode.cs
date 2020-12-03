@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Reflection;
 using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
@@ -9,21 +8,47 @@ using UnityEngine.Experimental.UIElements.StyleEnums;
 using UnityEditor;
 using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
+using UnityEngine.Experimental.UIElements.StyleSheets;
 
 namespace MomomaAssets
 {
 
-    abstract class TextureGraphNode : Node
+    interface ISerializableNode
     {
-        protected static readonly Color s_BackgroundColor = new Color(0.1803922f, 0.1803922f, 0.1803922f, 0.8039216f);
+        string guid { get; }
+        Rect serializePosition { get; }
+        string[] inputPortGuids { get; }
+        string[] outputPortGuids { get; }
+    }
+
+    [Serializable]
+    class TextureGraphNode : Node, ISerializableNode
+    {
+        static readonly Color s_BackgroundColor = new Color(0.1803922f, 0.1803922f, 0.1803922f, 0.8039216f);
 
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
+
+        [SerializeField]
+        string m_Guid;
+        public string guid => m_Guid;
+        [SerializeField]
+        Rect m_SerializePosition;
+        public Rect serializePosition => m_SerializePosition;
+        [SerializeField]
+        List<string> m_InputPortGuids = new List<string>();
+        public string[] inputPortGuids => m_InputPortGuids.ToArray();
+        [SerializeField]
+        List<string> m_OutputPortGuids = new List<string>();
+        public string[] outputPortGuids => m_OutputPortGuids.ToArray();
 
         protected TextureGraphNode() : base()
         {
             style.maxWidth = 150f;
             extensionContainer.style.backgroundColor = s_BackgroundColor;
+            m_Guid = Guid.NewGuid().ToString("N");
+            var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
+            scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
         }
 
         public override void SetPosition(Rect newPos)
@@ -31,9 +56,16 @@ namespace MomomaAssets
             newPos.x = Mathf.Round(newPos.x * 0.1f) * 10f;
             newPos.y = Mathf.Round(newPos.y * 0.1f) * 10f;
             base.SetPosition(newPos);
+            m_SerializePosition = newPos;
         }
 
-        internal abstract void Process();
+        public override void UpdatePresenterPosition()
+        {
+            base.UpdatePresenterPosition();
+            m_SerializePosition = GetPosition();
+        }
+
+        internal virtual void Process() { }
 
         protected bool IsProcessed()
         {
@@ -57,12 +89,20 @@ namespace MomomaAssets
             {
                 if (edge.output == null)
                     continue;
-                var outNode = edge.output.node as TextureGraphNode;
-                outNode.Process();
-                var rawData = graph.processData[edge.output];
-                if (rawData is T[])
+                var outPort = edge.output;
+                while (!(outPort.node is TextureGraphNode))
                 {
-                    inputValue = rawData as T[];
+                    var token = outPort.node as TokenNode;
+                    foreach (var e in token.input.connections)
+                    {
+                        outPort = e.output;
+                    }
+                }
+                (outPort.node as TextureGraphNode).Process();
+                var rawData = graph.processData[outPort];
+                if (rawData is T[] rawTData)
+                {
+                    inputValue = rawTData;
                 }
                 else
                 {
@@ -81,6 +121,7 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(T));
             port.portName = portName;
             inputContainer.Add(port);
+            m_InputPortGuids.Add(Guid.NewGuid().ToString("N"));
             return port;
         }
 
@@ -89,7 +130,33 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(T));
             port.portName = portName;
             outputContainer.Add(port);
+            m_OutputPortGuids.Add(Guid.NewGuid().ToString("N"));
             return port;
+        }
+    }
+
+    [Serializable]
+    class SerializableTokenNode : TokenNode, ISerializableNode
+    {
+        [SerializeField]
+        string m_Guid;
+        public string guid => m_Guid;
+        [SerializeField]
+        Rect m_SerializePosition;
+        public Rect serializePosition => m_SerializePosition;
+        [SerializeField]
+        List<string> m_InputPortGuids = new List<string>();
+        public string[] inputPortGuids => m_InputPortGuids.ToArray();
+        [SerializeField]
+        List<string> m_OutputPortGuids = new List<string>();
+        public string[] outputPortGuids => m_OutputPortGuids.ToArray();
+
+        SerializableTokenNode() : this(null, null) { }
+        internal SerializableTokenNode(Port input, Port output) : base(input, output)
+        {
+            m_Guid = Guid.NewGuid().ToString("N");
+            m_InputPortGuids.Add(Guid.NewGuid().ToString("N"));
+            m_OutputPortGuids.Add(Guid.NewGuid().ToString("N"));
         }
     }
 
@@ -106,8 +173,7 @@ namespace MomomaAssets
             title = "Import Texture";
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
-            objectField = new ObjectField() { objectType = typeof(Texture2D) };
-            objectField.StretchToParentWidth();
+            objectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
             objectField.OnValueChanged(e => OnValueChanged());
             extensionContainer.Add(objectField);
             image = new Image() { style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
@@ -297,7 +363,7 @@ namespace MomomaAssets
             port.name = "B";
             AddOutputPort<float>("Out");
             RefreshPorts();
-            m_EnumField = new EnumField(CalculateMode.Add) { style = { backgroundColor = s_BackgroundColor } };
+            m_EnumField = new EnumField(CalculateMode.Add);
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Experimental.UIElements;
 using UnityEngine.Experimental.UIElements.StyleEnums;
@@ -15,7 +16,7 @@ namespace MomomaAssets
     {
         TextureGraph m_TextureGraph;
 
-        [MenuItem("MomomaTools/TextureGraph", false, 105)]
+        [MenuItem("MomomaTools/TextureGraph", false, 150)]
         static void ShowWindow()
         {
             EditorWindow.GetWindow<TextureGraphWindow>("TextureGraph");
@@ -48,6 +49,7 @@ namespace MomomaAssets
         }
     }
 
+    [Serializable]
     class TextureGraph : GraphView
     {
         internal readonly Dictionary<Port, object> processData = new Dictionary<Port, object>();
@@ -56,6 +58,13 @@ namespace MomomaAssets
         internal readonly ExportTextureNode exportTextureNode;
 
         readonly Image m_PreviewImage;
+
+        [SerializeField]
+        List<string> m_SerializeNodes;
+        [SerializeField]
+        Vector3 m_ViewPortPosition;
+        [SerializeField]
+        Vector3 m_ViewPortScale;
 
         internal bool isNordDirty = false;
 
@@ -81,6 +90,15 @@ namespace MomomaAssets
             var searchWindowProvider = ScriptableObject.CreateInstance<SearchWindowProvider>();
             searchWindowProvider.graphView = this;
             nodeCreationRequest += context => SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), searchWindowProvider);
+            viewTransformChanged += view => { m_ViewPortPosition = viewTransform.position; m_ViewPortScale = viewTransform.scale; };
+            serializeGraphElements += OnSerializeGraphElements;
+            unserializeAndPaste += OnUnserializeAndPaste;
+        }
+
+        protected override void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
+        {
+            elements.Where(e => !(e is ExportTextureNode));
+            base.CollectCopyableGraphElements(elements, elementsToCopySet);
         }
 
         public override List<Port> GetCompatiblePorts(Port startAnchor, NodeAdapter nodeAdapter)
@@ -157,13 +175,82 @@ namespace MomomaAssets
             throw new InvalidCastException(fromType.Name + " can't cast " + toType.Name);
         }
 
+        string OnSerializeGraphElements(IEnumerable<GraphElement> elements)
+        {
+            return string.Join("\n", elements.Select(e => e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson(e)));
+        }
+
+        void OnUnserializeAndPaste(string operationName, string data)
+        {
+            var nodes = new Dictionary<string, (Node, ISerializableNode)>();
+            var ports = new Dictionary<string, (Node, ISerializableNode)>();
+            var edges = new Queue<TextureGraphEdge>();
+            foreach (var str in data.Split('\n'))
+            {
+                var subs = str.Split(new char[] { '&' }, 2);
+                var element = Activator.CreateInstance(Type.GetType(subs[0]), true) as GraphElement;
+                if (element == null || element is ExportTextureNode)
+                    continue;
+                if (element is Node node && element is ISerializableNode serializableNode)
+                {
+                    EditorJsonUtility.FromJsonOverwrite(subs[1], element);
+                    AddElement(element);
+                    isNordDirty = true;
+                    nodes[serializableNode.guid] = (node, serializableNode);
+                    foreach(var guid in serializableNode.inputPortGuids)
+                        ports[guid] = (node, serializableNode);
+                    foreach(var guid in serializableNode.outputPortGuids)
+                        ports[guid] = (node, serializableNode);
+                }
+                else if (element is TextureGraphEdge edge)
+                {
+                    EditorJsonUtility.FromJsonOverwrite(subs[1], element);
+                    edges.Enqueue(edge);
+                }
+            }
+            foreach(var edge in edges)
+            {
+                if (string.IsNullOrEmpty(edge.inputGuid) || string.IsNullOrEmpty(edge.outputGuid) || !ports.ContainsKey(edge.inputGuid) || !ports.ContainsKey(edge.outputGuid))
+                    continue;
+                var inputNode = ports[edge.inputGuid];
+                var outputNode = ports[edge.outputGuid];
+                var index = Array.FindIndex(inputNode.Item2.inputPortGuids, s => s == edge.inputGuid);
+                var inputPort = inputNode.Item1.inputContainer.Query<Port>().AtIndex(index);
+                index = Array.FindIndex(outputNode.Item2.outputPortGuids, s => s == edge.outputGuid);
+                var outputPort = outputNode.Item1.outputContainer.Query<Port>().AtIndex(index);
+                AddElement(inputPort.ConnectTo<TextureGraphEdge>(outputPort));
+            }
+            var allRect = Rect.zero;
+            foreach (var pair in nodes)
+            {
+                var rect = pair.Value.Item2.serializePosition;
+                if (allRect == Rect.zero)
+                    allRect = rect;
+                else
+                {
+                    var xMax = Math.Max(rect.xMax, allRect.xMax);
+                    var xMin = Math.Min(rect.xMin, allRect.xMin);
+                    var yMax = Math.Max(rect.yMax, allRect.yMax);
+                    var yMin = Math.Min(rect.yMin, allRect.yMin);
+                    allRect = Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+                }
+            }
+            var offset = contentViewContainer.WorldToLocal(contentRect.center) - allRect.center;
+            foreach (var pair in nodes)
+            {
+                var rect = pair.Value.Item2.serializePosition;
+                rect.position += offset;
+                pair.Value.Item1.SetPosition(rect);
+            }
+        }
+
         internal void Recalculate()
         {
             var texture = ProcessAll();
             if (m_PreviewImage?.image.value != null)
                 UnityEngine.Object.DestroyImmediate(m_PreviewImage.image.value);
             m_PreviewImage.image = texture;
-            Debug.Log("Recalculate");
+            //Debug.Log("Recalculate");
         }
 
         internal void OnDisable()
@@ -176,7 +263,10 @@ namespace MomomaAssets
 
         internal void SaveAsAsset()
         {
-            TextureGraphData.SaveGraph(AssetDatabase.GetAssetPath(graphData), this);
+            m_SerializeNodes = this.Query<TextureGraphNode>().ForEach(n => n.guid);
+            Debug.Log(m_SerializeNodes.Count);
+            Debug.Log(EditorJsonUtility.ToJson(this, true));
+            //TextureGraphData.SaveGraph(AssetDatabase.GetAssetPath(graphData), this);
         }
 
         internal void SaveTexture()
@@ -211,25 +301,62 @@ namespace MomomaAssets
         }
     }
 
+    [Serializable]
     class TextureGraphEdge : Edge
     {
+        [SerializeField]
+        string m_InputGuid;
+        public string inputGuid => m_InputGuid;
+        [SerializeField]
+        string m_OutputGuid;
+        public string outputGuid => m_OutputGuid;
+
         TextureGraph m_Graph;
         TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
 
         bool isConnected = false;
 
-        public TextureGraphEdge() : base() { }
+        public TextureGraphEdge() : base()
+        {
+            this.AddManipulator(new ContextualMenuManipulator(context => context.menu.AppendAction("Add Token", action => AddToken(action), action => DropdownMenu.MenuAction.StatusFlags.Normal)));
+        }
+
+        void AddToken(DropdownMenu.MenuAction action)
+        {
+            var inputPort = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, output.portType);
+            var outputPort = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, input.portType);
+            var token = new SerializableTokenNode(inputPort, outputPort);
+            graph.AddElement(token);
+            var rect = new Rect(action.eventInfo.localMousePosition, Vector2.zero);
+            token.SetPosition(rect);
+            input.Disconnect(this);
+            inputPort.Connect(this);
+            graph.AddElement(input.ConnectTo<TextureGraphEdge>(outputPort));
+            input = inputPort;
+        }
 
         public override void OnPortChanged(bool isInput)
         {
             base.OnPortChanged(isInput);
             if (isGhostEdge || graph == null)
                 return;
-            if ((input != null && output != null)
-             || (input == null && output == null && isConnected))
+            if ((input != null && output != null))
             {
-                isConnected = true;
                 graph.isNordDirty = true;
+                isConnected = true;
+                if (input.node is ISerializableNode inputNode && output.node is ISerializableNode outputNode)
+                {
+                    var index = input.node.inputContainer.Query<Port>().ToList().FindIndex(p => p == input);
+                    m_InputGuid = inputNode.inputPortGuids[index];
+                    index = output.node.outputContainer.Query<Port>().ToList().FindIndex(p => p == output);
+                    m_OutputGuid = outputNode.outputPortGuids[index];
+                }
+            }
+            else if (input == null && output == null && isConnected)
+            {
+                graph.isNordDirty = true;
+                m_InputGuid = null;
+                m_OutputGuid = null;
             }
         }
     }
