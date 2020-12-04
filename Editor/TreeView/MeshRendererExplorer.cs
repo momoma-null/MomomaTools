@@ -31,10 +31,10 @@ namespace MomomaAssets
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
 
-        [MenuItem("MomomaTools/MeshRendererExplorer", false, 105)]
+        [MenuItem("MomomaTools/Mesh Renderer Explorer", false, 105)]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<MeshRendererExplorer>("MeshRendererExplorer");
+            EditorWindow.GetWindow<MeshRendererExplorer>("Mesh Renderer Explorer");
         }
 
         void OnEnable()

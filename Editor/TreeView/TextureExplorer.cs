@@ -27,7 +27,7 @@ namespace MomomaAssets
         }
 
         const string searchStringStateKey = "TextureExplorerTreeViewWindow_SearchString";
-        const string sortedColumnIndexStaticStateKey = "TextureExplorerTreeViewWindow_sortedColumnIndex";
+        const string sortedColumnIndexStateKey = "TextureExplorerTreeViewWindow_sortedColumnIndex";
 
         static readonly Type s_TextureUtilType = Type.GetType("UnityEditor.TextureUtil, UnityEditor.dll");
         static readonly Dictionary<string, MethodInfo> s_TextureUtilInfos = new Dictionary<string, MethodInfo>();
@@ -35,10 +35,10 @@ namespace MomomaAssets
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
 
-        [MenuItem("MomomaTools/TextureExplorer", false, 110)]
+        [MenuItem("MomomaTools/Texture Explorer", false, 110)]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<TextureExplorer>("TextureExplorer");
+            EditorWindow.GetWindow<TextureExplorer>("Texture Explorer");
         }
 
         static MethodInfo GetMethod(string methodName)
@@ -134,6 +134,7 @@ namespace MomomaAssets
             header.Add("Memory Size", 80, item => item.memorySize, TextAlignment.Right);
             header.Add("Max Texture Size", 60, item => (MaxTextureSize)item.m_MaxTextureSize.intValue, (item, value) => item.m_MaxTextureSize.intValue = (int)value, item => item.m_MaxTextureSize);
             header.Add("Texture Type", 80, item => (TextureImporterType)item.m_TextureType.intValue, (item, value) => item.m_TextureType.intValue = (int)value, item => item.m_TextureType);
+            header.Add("sRGB", 50, item => Convert.ToBoolean(item.m_sRGBTexture.intValue), (item, value) => item.m_sRGBTexture.intValue = Convert.ToInt32(value), item => item.m_sRGBTexture, item => item.m_TextureType.intValue == 0);
             header.Add("Alpha Source", 80, item => (TextureImporterAlphaSource)item.m_AlphaUsage.intValue, (item, value) => item.m_AlphaUsage.intValue = (int)value, item => item.m_AlphaUsage);
             header.Add("Transparency", 50, item => Convert.ToBoolean(item.m_AlphaUsage.intValue), (item, value) => item.m_AlphaIsTransparency.intValue = Convert.ToInt32(value), item => item.m_AlphaIsTransparency, item => item.m_AlphaUsage.intValue > 0);
             header.Add("Mip Map", 50, item => Convert.ToBoolean(item.m_EnableMipMap.intValue), (item, value) => item.m_EnableMipMap.intValue = Convert.ToInt32(value), item => item.m_EnableMipMap);
@@ -142,7 +143,7 @@ namespace MomomaAssets
             header.Add("Readable", 50, item => Convert.ToBoolean(item.m_IsReadable.intValue), (item, value) => item.m_IsReadable.intValue = Convert.ToInt32(value), item => item.m_IsReadable);
             header.Add("Crunched Compression", 50, item => item.m_CrunchedCompression);
             header.Add("Compression Quality", 60, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
-            m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
+            m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
@@ -162,6 +163,7 @@ namespace MomomaAssets
             readonly internal TextureImporter importer;
             readonly internal SerializedProperty m_MaxTextureSize;
             readonly internal SerializedProperty m_TextureType;
+            readonly internal SerializedProperty m_sRGBTexture;
             readonly internal SerializedProperty m_AlphaUsage;
             readonly internal SerializedProperty m_AlphaIsTransparency;
             readonly internal SerializedProperty m_EnableMipMap;
@@ -184,6 +186,7 @@ namespace MomomaAssets
 
                 m_MaxTextureSize = serializedObject.FindProperty("m_PlatformSettings.Array.data[0].m_MaxTextureSize");
                 m_TextureType = serializedObject.FindProperty("m_TextureType");
+                m_sRGBTexture = serializedObject.FindProperty("m_sRGBTexture");
                 m_AlphaUsage = serializedObject.FindProperty("m_AlphaUsage");
                 m_AlphaIsTransparency = serializedObject.FindProperty("m_AlphaIsTransparency");
                 m_EnableMipMap = serializedObject.FindProperty("m_EnableMipMap");
