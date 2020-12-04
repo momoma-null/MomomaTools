@@ -13,7 +13,12 @@ using UnityEngine.Experimental.UIElements.StyleSheets;
 namespace MomomaAssets
 {
 
-    interface ISerializableNode
+    interface IGuidReplacer
+    {
+        void ReplaceGuids(Dictionary<string, string> replaceGuids);
+    }
+
+    interface ISerializableNode : IGuidReplacer
     {
         string guid { get; }
         Rect serializePosition { get; }
@@ -49,6 +54,13 @@ namespace MomomaAssets
             m_Guid = Guid.NewGuid().ToString("N");
             var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
             scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
+        }
+
+        public void ReplaceGuids(Dictionary<string, string> replaceGuids)
+        {
+            m_InputPortGuids = m_InputPortGuids.Select(i => replaceGuids[i]).ToList();
+            m_OutputPortGuids = m_OutputPortGuids.Select(i => replaceGuids[i]).ToList();
+            m_Guid = replaceGuids[m_Guid];
         }
 
         public override void SetPosition(Rect newPos)
@@ -151,12 +163,57 @@ namespace MomomaAssets
         List<string> m_OutputPortGuids = new List<string>();
         public string[] outputPortGuids => m_OutputPortGuids.ToArray();
 
-        SerializableTokenNode() : this(null, null) { }
+        [SerializeField]
+        string m_InputType;
+        [SerializeField]
+        string m_OutputType;
+
+        SerializableTokenNode() : this(Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, null), Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, null)) { }
         internal SerializableTokenNode(Port input, Port output) : base(input, output)
         {
             m_Guid = Guid.NewGuid().ToString("N");
             m_InputPortGuids.Add(Guid.NewGuid().ToString("N"));
             m_OutputPortGuids.Add(Guid.NewGuid().ToString("N"));
+            m_InputType = input.portType?.AssemblyQualifiedName;
+            m_OutputType = output.portType?.AssemblyQualifiedName;
+            if (input.portType == null || output.portType == null)
+            {
+                var typeScheduleItem = schedule.Execute(() => SetPortType());
+                typeScheduleItem.Until(() => input.portType != null && output.portType != null);
+            }
+            var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
+            scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
+        }
+
+        void SetPortType()
+        {
+            if (!string.IsNullOrEmpty(m_InputType))
+            {
+                input.portType = Type.GetType(m_InputType);
+            }
+            if (!string.IsNullOrEmpty(m_OutputType))
+            {
+                output.portType = Type.GetType(m_OutputType);
+            }
+        }
+
+        public void ReplaceGuids(Dictionary<string, string> replaceGuids)
+        {
+            m_InputPortGuids = m_InputPortGuids.Select(i => replaceGuids[i]).ToList();
+            m_OutputPortGuids = m_OutputPortGuids.Select(i => replaceGuids[i]).ToList();
+            m_Guid = replaceGuids[m_Guid];
+        }
+
+        public override void SetPosition(Rect newPos)
+        {
+            base.SetPosition(newPos);
+            m_SerializePosition = newPos;
+        }
+
+        public override void UpdatePresenterPosition()
+        {
+            base.UpdatePresenterPosition();
+            m_SerializePosition = GetPosition();
         }
     }
 
@@ -190,7 +247,7 @@ namespace MomomaAssets
         void OnValueChanged()
         {
             ReloadTexture();
-            graph.Recalculate();
+            graph.MarkNordIsDirty();
         }
 
         void ReloadTexture()
@@ -244,10 +301,10 @@ namespace MomomaAssets
             widthPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Width" };
             heightPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Height" };
             widthPopupField.OnValueChanged(e => heightPopupField.value = e.newValue);
-            widthPopupField.OnValueChanged(e => graph.Recalculate());
+            widthPopupField.OnValueChanged(e => graph.MarkNordIsDirty());
             heightPopupField.SetEnabled(false);
-            extensionContainer.Add(widthPopupField);
-            extensionContainer.Add(heightPopupField);
+            extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Width", widthPopupField));
+            extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Height", heightPopupField));
             RefreshExpandedState();
         }
 
