@@ -12,55 +12,46 @@ namespace MomomaAssets
     class TextureGraphData : ScriptableObject
     {
         [Serializable]
-        class EdgeData
+        class SerializedGraphElement
         {
             [SerializeField]
-            internal int m_OutputNode;
+            internal string m_TypeName;
             [SerializeField]
-            internal int m_InputNode;
+            internal string m_Data;
         }
 
-        [Serializable]
-        class NodeData
-        {
-            [SerializeField]
-            internal int m_HashCode;
-            [SerializeField]
-            internal string m_Type;
-            [SerializeField]
-            internal Vector2 m_Position;
-            [SerializeField]
-            internal bool m_Expanded;
-        }
-
-        [SerializeField]
-        List<EdgeData> m_Edges = new List<EdgeData>();
-        [SerializeField]
-        List<NodeData> m_Nodes = new List<NodeData>();
+        [SerializeField, HideInInspector]
+        List<SerializedGraphElement> m_Nodes = new List<SerializedGraphElement>();
+        [SerializeField, HideInInspector]
+        List<SerializedGraphElement> m_Edges = new List<SerializedGraphElement>();
+        [SerializeField, HideInInspector]
+        Vector3 m_ViewPosition;
+        [SerializeField, HideInInspector]
+        Vector3 m_ViewScale;
 
         internal static void SaveGraph(string path, TextureGraph graphView)
         {
-            var edges = graphView.edges.ToList();
             var graphData = ScriptableObject.CreateInstance<TextureGraphData>();
+            var edges = graphView.edges.ToList();
             foreach (var edge in edges)
             {
-                graphData.m_Edges.Add(new EdgeData()
+                graphData.m_Edges.Add(new SerializedGraphElement()
                 {
-                    m_OutputNode = edge.output.node.GetHashCode(),
-                    m_InputNode = edge.input.node.GetHashCode()
+                    m_TypeName = edge.GetType().AssemblyQualifiedName,
+                    m_Data = EditorJsonUtility.ToJson(edge)
                 });
             }
             var nodes = graphView.nodes.ToList();
             foreach (var node in nodes)
             {
-                graphData.m_Nodes.Add(new NodeData()
+                graphData.m_Nodes.Add(new SerializedGraphElement()
                 {
-                    m_HashCode = node.GetHashCode(),
-                    m_Type = node.GetType().AssemblyQualifiedName,
-                    m_Position = node.GetPosition().position,
-                    m_Expanded = node.expanded,
+                    m_TypeName = node.GetType().AssemblyQualifiedName,
+                    m_Data = EditorJsonUtility.ToJson(node)
                 });
             }
+            graphData.m_ViewPosition = graphView.viewTransform.position;
+            graphData.m_ViewScale = graphView.viewTransform.scale;
             if (string.IsNullOrEmpty(path))
             {
                 path = @"Assets/NewTextureGraph.asset";
@@ -77,12 +68,12 @@ namespace MomomaAssets
             var graphData = AssetDatabase.LoadAssetAtPath<TextureGraphData>(path);
             if (graphView == null)
             {
-                var window = EditorWindow.GetWindow<TextureGraphWindow>();
+                var window = TextureGraphWindow.ShowWindow();
                 foreach (var element in window.GetRootVisualContainer())
                 {
-                    if (element is TextureGraph)
+                    if (element is TextureGraph graph)
                     {
-                        graphView = element as TextureGraph;
+                        graphView = graph;
                         break;
                     }
                 }
@@ -92,34 +83,51 @@ namespace MomomaAssets
                     return;
                 }
             }
+            graphView.DeleteElements(graphView.graphElements.ToList());
             graphView.graphData = graphData;
-            graphView.edges.ForEach(graphView.RemoveElement);
-            graphView.nodes.ForEach(graphView.RemoveElement);
-            var nodesDict = new Dictionary<int, Node>();
+            var ports = new Dictionary<string, Port>();
             foreach (var nodeData in graphData.m_Nodes)
             {
-                var node = Activator.CreateInstance(Type.GetType(nodeData.m_Type), true) as Node;
-                var rect = node.GetPosition();
-                rect.position = nodeData.m_Position;
-                node.SetPosition(rect);
+                var node = Activator.CreateInstance(Type.GetType(nodeData.m_TypeName), true) as Node;
+                EditorJsonUtility.FromJsonOverwrite(nodeData.m_Data, node);
                 graphView.AddElement(node);
-                nodesDict[nodeData.m_HashCode] = node;
+                var serializableNode = node as ISerializableNode;
+                if (node is TokenNode token)
+                {
+                    ports[serializableNode.inputPortGuids[0]] = token.input;
+                    ports[serializableNode.outputPortGuids[0]] = token.output;
+                }
+                else
+                {
+                    var iPorts = new Queue<Port>(node.inputContainer.Query<Port>().ToList());
+                    foreach (var guid in serializableNode.inputPortGuids)
+                    {
+                        ports[guid] = iPorts.Dequeue();
+                    }
+                    var oPorts = new Queue<Port>(node.outputContainer.Query<Port>().ToList());
+                    foreach (var guid in serializableNode.outputPortGuids)
+                    {
+                        ports[guid] = oPorts.Dequeue();
+                    }
+                }
+                serializableNode.ReloadGuids();
             }
             foreach (var edgeData in graphData.m_Edges)
             {
-                var outputNode = nodesDict[edgeData.m_OutputNode];
-                var inputNode = nodesDict[edgeData.m_InputNode];
-                var edge = new Edge();
-                edge.output = outputNode.outputContainer.Q<Port>();
-                edge.input = inputNode.inputContainer.Q<Port>();
-                edge.output.Connect(edge);
-                edge.input.Connect(edge);
-                graphView.Add(edge);
+                var edge = Activator.CreateInstance(Type.GetType(edgeData.m_TypeName), true) as TextureGraphEdge;
+                EditorJsonUtility.FromJsonOverwrite(edgeData.m_Data, edge);
+                if (string.IsNullOrEmpty(edge.inputGuid) || string.IsNullOrEmpty(edge.outputGuid) || !ports.ContainsKey(edge.inputGuid) || !ports.ContainsKey(edge.outputGuid))
+                    continue;
+                var inputPort = ports[edge.inputGuid];
+                var outputPort = ports[edge.outputGuid];
+                edge.input = inputPort;
+                edge.output = outputPort;
+                inputPort.Connect(edge);
+                outputPort.Connect(edge);
+                graphView.AddElement(edge);
             }
-            foreach (var nodeData in graphData.m_Nodes)
-            {
-                nodesDict[nodeData.m_HashCode].expanded = nodeData.m_Expanded;
-            }
+            graphView.MarkNordIsDirty();
+            graphView.UpdateViewTransform(graphData.m_ViewPosition, graphData.m_ViewScale);
         }
     }
 
@@ -128,10 +136,6 @@ namespace MomomaAssets
     {
         public override void OnInspectorGUI()
         {
-            using (new EditorGUI.DisabledScope())
-            {
-                base.OnInspectorGUI();
-            }
             if (GUILayout.Button("Open"))
             {
                 TextureGraphData.LoadGraph(AssetDatabase.GetAssetPath(target), null);

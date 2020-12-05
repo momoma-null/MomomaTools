@@ -13,17 +13,14 @@ using UnityEngine.Experimental.UIElements.StyleSheets;
 namespace MomomaAssets
 {
 
-    interface IGuidReplacer
-    {
-        void ReplaceGuids(Dictionary<string, string> replaceGuids);
-    }
-
-    interface ISerializableNode : IGuidReplacer
+    interface ISerializableNode : ISerializationCallbackReceiver
     {
         string guid { get; }
         Rect serializePosition { get; }
         string[] inputPortGuids { get; }
         string[] outputPortGuids { get; }
+
+        void ReloadGuids();
     }
 
     [Serializable]
@@ -51,16 +48,26 @@ namespace MomomaAssets
         {
             style.maxWidth = 150f;
             extensionContainer.style.backgroundColor = s_BackgroundColor;
-            m_Guid = Guid.NewGuid().ToString("N");
+            m_Guid = persistenceKey;
             var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
             scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
         }
 
-        public void ReplaceGuids(Dictionary<string, string> replaceGuids)
+        public void ReloadGuids()
         {
-            m_InputPortGuids = m_InputPortGuids.Select(i => replaceGuids[i]).ToList();
-            m_OutputPortGuids = m_OutputPortGuids.Select(i => replaceGuids[i]).ToList();
-            m_Guid = replaceGuids[m_Guid];
+            m_InputPortGuids = inputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
+            m_OutputPortGuids = outputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
+            m_Guid = persistenceKey;
+        }
+
+        public virtual void OnAfterDeserialize()
+        {
+            SetPosition(m_SerializePosition);
+        }
+
+        public virtual void OnBeforeSerialize()
+        {
+
         }
 
         public override void SetPosition(Rect newPos)
@@ -133,7 +140,7 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(T));
             port.portName = portName;
             inputContainer.Add(port);
-            m_InputPortGuids.Add(Guid.NewGuid().ToString("N"));
+            m_InputPortGuids.Add(port.persistenceKey);
             return port;
         }
 
@@ -142,7 +149,7 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(T));
             port.portName = portName;
             outputContainer.Add(port);
-            m_OutputPortGuids.Add(Guid.NewGuid().ToString("N"));
+            m_OutputPortGuids.Add(port.persistenceKey);
             return port;
         }
     }
@@ -171,9 +178,9 @@ namespace MomomaAssets
         SerializableTokenNode() : this(Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, null), Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, null)) { }
         internal SerializableTokenNode(Port input, Port output) : base(input, output)
         {
-            m_Guid = Guid.NewGuid().ToString("N");
-            m_InputPortGuids.Add(Guid.NewGuid().ToString("N"));
-            m_OutputPortGuids.Add(Guid.NewGuid().ToString("N"));
+            m_Guid = persistenceKey;
+            m_InputPortGuids.Add(input.persistenceKey);
+            m_OutputPortGuids.Add(output.persistenceKey);
             m_InputType = input.portType?.AssemblyQualifiedName;
             m_OutputType = output.portType?.AssemblyQualifiedName;
             if (input.portType == null || output.portType == null)
@@ -197,11 +204,21 @@ namespace MomomaAssets
             }
         }
 
-        public void ReplaceGuids(Dictionary<string, string> replaceGuids)
+        public void ReloadGuids()
         {
-            m_InputPortGuids = m_InputPortGuids.Select(i => replaceGuids[i]).ToList();
-            m_OutputPortGuids = m_OutputPortGuids.Select(i => replaceGuids[i]).ToList();
-            m_Guid = replaceGuids[m_Guid];
+            m_InputPortGuids = new List<string>() { input.persistenceKey };
+            m_OutputPortGuids = new List<string>() { output.persistenceKey };
+            m_Guid = persistenceKey;
+        }
+
+        public virtual void OnAfterDeserialize()
+        {
+            SetPosition(m_SerializePosition);
+        }
+
+        public virtual void OnBeforeSerialize()
+        {
+
         }
 
         public override void SetPosition(Rect newPos)
@@ -225,13 +242,16 @@ namespace MomomaAssets
         int m_Width;
         int m_Height;
 
+        [SerializeField]
+        Texture2D m_ImageTexture;
+
         internal ImportTextureNode() : base()
         {
             title = "Import Texture";
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
             objectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
-            objectField.OnValueChanged(e => OnValueChanged());
+            objectField.OnValueChanged(OnValueChanged);
             extensionContainer.Add(objectField);
             image = new Image() { style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
             extensionContainer.Add(image);
@@ -244,14 +264,24 @@ namespace MomomaAssets
                 Texture.DestroyImmediate(image.image);
         }
 
-        void OnValueChanged()
+        public override void OnAfterDeserialize()
         {
+            base.OnAfterDeserialize();
+            objectField.value = m_ImageTexture;
+            schedule.Execute(() => ReloadTexture()).Until(() => graph != null);
+        }
+
+        void OnValueChanged(ChangeEvent<UnityEngine.Object> e)
+        {
+            m_ImageTexture = e.newValue as Texture2D;
             ReloadTexture();
             graph.MarkNordIsDirty();
         }
 
         void ReloadTexture()
         {
+            if (graph == null)
+                return;
             if (image.image.value != null)
                 Texture.DestroyImmediate(image.image);
             m_Width = graph.width;
@@ -262,14 +292,33 @@ namespace MomomaAssets
                 image.image = null;
                 return;
             }
-            var newImage = new Texture2D(m_Width, m_Height, TextureFormat.RGBAFloat, false);
-            var renderTexture = RenderTexture.GetTemporary(m_Width, m_Height, 0, RenderTextureFormat.ARGBFloat);
-            Graphics.Blit(srcTexture, renderTexture);
+            RenderTexture renderTexture;
+            Material material;
+            var newImage = new Texture2D(m_Width, m_Height, TextureFormat.RGBA32, false);
+            using (var so = new SerializedObject(srcTexture))
+            {
+                var lightmapFormat = so.FindProperty("m_LightmapFormat").intValue;
+                if (lightmapFormat == 3 || (lightmapFormat == 4 && srcTexture.format == TextureFormat.BC5)) // see TextureImporterEnums.cs and EditorGUI.cs at UnityCsReference
+                {
+                    material = s_NormalmapMaterial;
+                    renderTexture = RenderTexture.GetTemporary(m_Width, m_Height, 0, RenderTextureFormat.ARGBFloat);
+                }
+                else
+                {
+                    material = s_TransparentMaterial;
+                    material.SetColor("_ColorMask", Color.white);
+                    renderTexture = RenderTexture.GetTemporary(m_Width, m_Height, 0, RenderTextureFormat.ARGB32);
+                }
+            }
+            Graphics.Blit(srcTexture, renderTexture, material);
             newImage.ReadPixels(new Rect(0, 0, m_Width, m_Height), 0, 0, false);
             newImage.Apply();
             RenderTexture.ReleaseTemporary(renderTexture);
             image.image = newImage;
         }
+
+        readonly static Material s_NormalmapMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewEncodedNormals.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
+        readonly static Material s_TransparentMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewTransparent.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
 
         internal override void Process()
         {
@@ -278,7 +327,7 @@ namespace MomomaAssets
             if (m_Width != graph.width || m_Height != graph.height)
                 ReloadTexture();
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = (image.image.value as Texture2D)?.GetRawTextureData<Vector4>().ToArray() ?? new Vector4[m_Width * m_Height];
+            graph.processData[port] = (image.image.value as Texture2D)?.GetPixels().Select(c => (Vector4)c).ToArray() ?? new Vector4[m_Width * m_Height];
         }
     }
 
@@ -292,20 +341,45 @@ namespace MomomaAssets
         readonly PopupField<int> widthPopupField;
         readonly PopupField<int> heightPopupField;
 
+        [SerializeField]
+        int m_WidthValue = s_PopupValues[6];
+        [SerializeField]
+        int m_HeightValue = s_PopupValues[6];
+
         internal ExportTextureNode() : base()
         {
             title = "Export Texture";
             capabilities = capabilities & ~Capabilities.Deletable;
             AddInputPort<Vector4>("Color");
             RefreshPorts();
-            widthPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Width" };
-            heightPopupField = new PopupField<int>(s_PopupValues, 6) { name = "Height" };
-            widthPopupField.OnValueChanged(e => heightPopupField.value = e.newValue);
-            widthPopupField.OnValueChanged(e => graph.MarkNordIsDirty());
+            widthPopupField = new PopupField<int>(s_PopupValues, defaultValue: m_WidthValue) { name = "Width" };
+            heightPopupField = new PopupField<int>(s_PopupValues, defaultValue: m_HeightValue) { name = "Height" };
+            widthPopupField.OnValueChanged(OnWidthValueChanged);
+            heightPopupField.OnValueChanged(OnHeightValueChanged);
             heightPopupField.SetEnabled(false);
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Width", widthPopupField));
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Height", heightPopupField));
             RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            widthPopupField.value = m_WidthValue;
+            heightPopupField.value = m_HeightValue;
+        }
+
+        void OnWidthValueChanged(ChangeEvent<int> e)
+        {
+            heightPopupField.value = e.newValue;
+            m_WidthValue = e.newValue;
+            graph.MarkNordIsDirty();
+        }
+
+        void OnHeightValueChanged(ChangeEvent<int> e)
+        {
+            m_HeightValue = e.newValue;
+            graph.MarkNordIsDirty();
         }
 
         internal override void Process()
@@ -406,10 +480,16 @@ namespace MomomaAssets
         {
             Add,
             Subtract,
+            Multiply,
+            Divide,
+            Surplus,
             Reverse
         }
 
         readonly EnumField m_EnumField;
+
+        [SerializeField]
+        int m_CalculateMode = (int)CalculateMode.Add;
 
         internal MathNode() : base()
         {
@@ -420,9 +500,16 @@ namespace MomomaAssets
             port.name = "B";
             AddOutputPort<float>("Out");
             RefreshPorts();
-            m_EnumField = new EnumField(CalculateMode.Add);
+            m_EnumField = new EnumField((CalculateMode)m_CalculateMode);
+            m_EnumField.OnValueChanged(e => m_CalculateMode = (int)(CalculateMode)e.newValue);
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            m_EnumField.value = (CalculateMode)m_CalculateMode;
         }
 
         internal override void Process()
@@ -442,6 +529,15 @@ namespace MomomaAssets
                     break;
                 case CalculateMode.Subtract:
                     result = valueA.Select((v, i) => v - valueB[i]).ToArray();
+                    break;
+                case CalculateMode.Multiply:
+                    result = valueA.Select((v, i) => v * valueB[i]).ToArray();
+                    break;
+                case CalculateMode.Divide:
+                    result = valueA.Select((v, i) => v / valueB[i]).ToArray();
+                    break;
+                case CalculateMode.Surplus:
+                    result = valueA.Select((v, i) => v % valueB[i]).ToArray();
                     break;
                 case CalculateMode.Reverse:
                     result = valueA.Select(v => 1f - v).ToArray();

@@ -17,9 +17,9 @@ namespace MomomaAssets
         TextureGraph m_TextureGraph;
 
         [MenuItem("MomomaTools/TextureGraph", false, 150)]
-        static void ShowWindow()
+        public static TextureGraphWindow ShowWindow()
         {
-            EditorWindow.GetWindow<TextureGraphWindow>("TextureGraph");
+            return EditorWindow.GetWindow<TextureGraphWindow>("TextureGraph");
         }
 
         void OnEnable()
@@ -32,23 +32,17 @@ namespace MomomaAssets
         }
     }
 
-    [Serializable]
     class TextureGraph : GraphView
     {
         internal readonly Dictionary<Port, object> processData = new Dictionary<Port, object>();
         internal readonly TextureGraphWindow window;
         internal TextureGraphData graphData;
-        internal readonly ExportTextureNode exportTextureNode;
+
+        ExportTextureNode m_ExportTextureNode;
+        internal ExportTextureNode exportTextureNode => m_ExportTextureNode ?? (m_ExportTextureNode = nodes.ToList().Find(n => n is ExportTextureNode) as ExportTextureNode);
 
         readonly Image m_PreviewImage;
         readonly IVisualElementScheduledItem m_RecalculateScheduledItem;
-
-        [SerializeField]
-        List<string> m_SerializeNodes;
-        [SerializeField]
-        Vector3 m_ViewPortPosition;
-        [SerializeField]
-        Vector3 m_ViewPortScale;
 
         internal int width => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
         internal int height => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value : 128;
@@ -59,12 +53,12 @@ namespace MomomaAssets
         {
             this.window = window;
             AddStyleSheetPath("TextureGraphStyles");
-            var background = new GridBackground();
+            var background = new GridBackground() { style = { alignItems = Align.Center, justifyContent = Justify.Center } };
             Insert(0, background);
-            m_PreviewImage = new Image() { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore, style = { positionType = PositionType.Absolute, marginLeft = 20f, marginRight = 20f, marginTop = 20f, marginBottom = 20f, height = 128f, width = 128f } };
-            Insert(1, m_PreviewImage);
-            exportTextureNode = new ExportTextureNode();
-            AddElement(exportTextureNode);
+            m_PreviewImage = new Image() { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore, style = { positionType = PositionType.Absolute, height = 128f, width = 128f } };
+            background.Add(m_PreviewImage);
+            m_ExportTextureNode = new ExportTextureNode();
+            AddElement(m_ExportTextureNode);
             this.AddManipulator(new SelectionDragger());
             this.AddManipulator(new ContentDragger());
             this.AddManipulator(new ContentZoomer());
@@ -72,10 +66,11 @@ namespace MomomaAssets
             var searchWindowProvider = ScriptableObject.CreateInstance<SearchWindowProvider>();
             searchWindowProvider.graphView = this;
             nodeCreationRequest += context => SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), searchWindowProvider);
-            viewTransformChanged += view => { m_ViewPortPosition = viewTransform.position; m_ViewPortScale = viewTransform.scale; };
             serializeGraphElements += OnSerializeGraphElements;
             unserializeAndPaste += OnUnserializeAndPaste;
             m_RecalculateScheduledItem = schedule.Execute(() => Recalculate());
+            viewTransform.position = window.position.size * 0.5f;
+            graphViewChanged += OnGraphViewChanged;
         }
 
         ~TextureGraph()
@@ -128,6 +123,15 @@ namespace MomomaAssets
             }
         }
 
+        GraphViewChange OnGraphViewChanged(GraphViewChange graphViewChange)
+        {
+            if (graphViewChange.elementsToRemove?.Exists(e => e is ExportTextureNode) ?? false)
+            {
+                m_ExportTextureNode = null;
+            }
+            return graphViewChange;
+        }
+
         static bool IsAssignableType(Type fromType, Type toType)
         {
             if (toType.IsAssignableFrom(fromType))
@@ -174,10 +178,8 @@ namespace MomomaAssets
         void OnUnserializeAndPaste(string operationName, string data)
         {
             var nodes = new Dictionary<string, (Node, ISerializableNode)>();
-            var ports = new Dictionary<string, (Node, ISerializableNode)>();
+            var ports = new Dictionary<string, Port>();
             var edges = new Queue<TextureGraphEdge>();
-            var newEdges = new Queue<TextureGraphEdge>();
-            var replaceGuids = new Dictionary<string, string>();
             foreach (var str in data.Split('\n'))
             {
                 var subs = str.Split(new char[] { '&' }, 2);
@@ -190,17 +192,25 @@ namespace MomomaAssets
                     AddElement(element);
                     MarkNordIsDirty();
                     nodes[serializableNode.guid] = (node, serializableNode);
-                    replaceGuids[serializableNode.guid] = Guid.NewGuid().ToString("N");
-                    foreach (var guid in serializableNode.inputPortGuids)
+                    if (node is TokenNode token)
                     {
-                        ports[guid] = (node, serializableNode);
-                        replaceGuids[guid] = Guid.NewGuid().ToString("N");
+                        ports[serializableNode.inputPortGuids[0]] = token.input;
+                        ports[serializableNode.outputPortGuids[0]] = token.output;
                     }
-                    foreach (var guid in serializableNode.outputPortGuids)
+                    else
                     {
-                        ports[guid] = (node, serializableNode);
-                        replaceGuids[guid] = Guid.NewGuid().ToString("N");
+                        var iPorts = new Queue<Port>(node.inputContainer.Query<Port>().ToList());
+                        foreach (var guid in serializableNode.inputPortGuids)
+                        {
+                            ports[guid] = iPorts.Dequeue();
+                        }
+                        var oPorts = new Queue<Port>(node.outputContainer.Query<Port>().ToList());
+                        foreach (var guid in serializableNode.outputPortGuids)
+                        {
+                            ports[guid] = oPorts.Dequeue();
+                        }
                     }
+                    serializableNode.ReloadGuids();
                 }
                 else if (element is TextureGraphEdge edge)
                 {
@@ -212,30 +222,13 @@ namespace MomomaAssets
             {
                 if (string.IsNullOrEmpty(edge.inputGuid) || string.IsNullOrEmpty(edge.outputGuid) || !ports.ContainsKey(edge.inputGuid) || !ports.ContainsKey(edge.outputGuid))
                     continue;
-                var inputNode = ports[edge.inputGuid];
-                var outputNode = ports[edge.outputGuid];
-                Port inputPort, outputPort;
-                if (inputNode.Item1 is TokenNode iToken)
-                {
-                    inputPort = iToken.input;
-                }
-                else
-                {
-                    var index = Array.FindIndex(inputNode.Item2.inputPortGuids, s => s == edge.inputGuid);
-                    inputPort = inputNode.Item1.inputContainer.Query<Port>().AtIndex(index);
-                }
-                if (outputNode.Item1 is TokenNode oToken)
-                {
-                    outputPort = oToken.output;
-                }
-                else
-                {
-                    var index = Array.FindIndex(outputNode.Item2.outputPortGuids, s => s == edge.outputGuid);
-                    outputPort = outputNode.Item1.outputContainer.Query<Port>().AtIndex(index);
-                }
-                var newEdge = inputPort.ConnectTo<TextureGraphEdge>(outputPort);
-                newEdges.Enqueue(newEdge);
-                AddElement(newEdge);
+                var inputPort = ports[edge.inputGuid];
+                var outputPort = ports[edge.outputGuid];
+                edge.input = inputPort;
+                edge.output = outputPort;
+                inputPort.Connect(edge);
+                outputPort.Connect(edge);
+                AddElement(edge);
             }
             var allRect = Rect.zero;
             foreach (var pair in nodes)
@@ -259,9 +252,6 @@ namespace MomomaAssets
                 rect.position += offset;
                 pair.Value.Item1.SetPosition(rect);
             }
-            var guidReplacers = nodes.Select(n => n.Value.Item1 as IGuidReplacer).Union(newEdges.Select(e => e as IGuidReplacer));
-            foreach(var e in guidReplacers)
-                e.ReplaceGuids(replaceGuids);
         }
 
         internal void MarkNordIsDirty()
@@ -281,10 +271,7 @@ namespace MomomaAssets
 
         internal void SaveAsAsset()
         {
-            m_SerializeNodes = this.Query<TextureGraphNode>().ForEach(n => n.guid);
-            Debug.Log(m_SerializeNodes.Count);
-            Debug.Log(EditorJsonUtility.ToJson(this, true));
-            //TextureGraphData.SaveGraph(AssetDatabase.GetAssetPath(graphData), this);
+            TextureGraphData.SaveGraph(AssetDatabase.GetAssetPath(graphData), this);
         }
 
         internal void SaveTexture()
@@ -312,7 +299,7 @@ namespace MomomaAssets
         {
             processData.Clear();
             exportTextureNode.Process();
-            var texture = new Texture2D(width, height, TextureFormat.RGBAFloat, false);
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
             texture.SetPixels(exportTextureNode.colors);
             texture.Apply();
             return texture;
@@ -320,7 +307,7 @@ namespace MomomaAssets
     }
 
     [Serializable]
-    class TextureGraphEdge : Edge, IGuidReplacer
+    class TextureGraphEdge : Edge
     {
         [SerializeField]
         string m_InputGuid;
@@ -337,12 +324,6 @@ namespace MomomaAssets
         public TextureGraphEdge() : base()
         {
             this.AddManipulator(new ContextualMenuManipulator(context => context.menu.AppendAction("Add Token", action => AddToken(action), action => DropdownMenu.MenuAction.StatusFlags.Normal)));
-        }
-
-        public void ReplaceGuids(Dictionary<string, string> replaceGuids)
-        {
-            replaceGuids.TryGetValue(m_InputGuid, out m_InputGuid);
-            replaceGuids.TryGetValue(m_OutputGuid, out m_OutputGuid);
         }
 
         void AddToken(DropdownMenu.MenuAction action)
@@ -364,38 +345,8 @@ namespace MomomaAssets
             base.OnPortChanged(isInput);
             if (isGhostEdge)
                 return;
-            if (input != null && input.node is ISerializableNode iNode)
-            {
-                if (input.node is TokenNode)
-                {
-                    m_InputGuid = iNode.inputPortGuids[0];
-                }
-                else
-                {
-                    var index = input.node.inputContainer.Query<Port>().ToList().FindIndex(p => p == input);
-                    m_InputGuid = iNode.inputPortGuids[index];
-                }
-            }
-            else
-            {
-                m_InputGuid = null;
-            }
-            if (output != null && output.node is ISerializableNode oNode)
-            {
-                if (output.node is TokenNode)
-                {
-                    m_OutputGuid = oNode.outputPortGuids[0];
-                }
-                else
-                {
-                    var index = output.node.outputContainer.Query<Port>().ToList().FindIndex(p => p == output);
-                    m_OutputGuid = oNode.outputPortGuids[index];
-                }
-            }
-            else
-            {
-                m_OutputGuid = null;
-            }
+            m_InputGuid = input?.persistenceKey;
+            m_OutputGuid = output?.persistenceKey;
             if (graph != null)
             {
                 if ((input != null && output != null))
