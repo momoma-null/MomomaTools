@@ -9,6 +9,7 @@ using UnityEditor;
 using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
 using UnityEngine.Experimental.UIElements.StyleSheets;
+using MomomaAssets.Utility;
 
 namespace MomomaAssets
 {
@@ -86,7 +87,7 @@ namespace MomomaAssets
 
         internal virtual void Process() { }
 
-        protected bool IsProcessed()
+        bool IsProcessed()
         {
             foreach (var port in outputContainer.Query<Port>().ToList())
             {
@@ -117,7 +118,9 @@ namespace MomomaAssets
                         outPort = e.output;
                     }
                 }
-                (outPort.node as TextureGraphNode).Process();
+                var graphNode = outPort.node as TextureGraphNode;
+                if (!graphNode.IsProcessed())
+                    graphNode.Process();
                 var rawData = graph.processData[outPort];
                 if (rawData is T[] rawTData)
                 {
@@ -251,9 +254,11 @@ namespace MomomaAssets
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
             objectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
+            objectField[0].style.flexShrink = 1f;
+            objectField[0][1].style.flexShrink = 1f;
             objectField.OnValueChanged(OnValueChanged);
             extensionContainer.Add(objectField);
-            image = new Image() { style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
+            image = new Image() { scaleMode = ScaleMode.ScaleToFit, style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
             extensionContainer.Add(image);
             RefreshExpandedState();
         }
@@ -322,8 +327,6 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            if (IsProcessed())
-                return;
             if (m_Width != graph.width || m_Height != graph.height)
                 ReloadTexture();
             var port = outputContainer.Q<Port>();
@@ -412,8 +415,6 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            if (IsProcessed())
-                return;
             var length = graph.width * graph.height;
             var reds = new float[length];
             var greens = new float[length];
@@ -458,8 +459,6 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            if (IsProcessed())
-                return;
             var length = graph.width * graph.height;
             var reds = new float[length];
             var greens = new float[length];
@@ -471,6 +470,87 @@ namespace MomomaAssets
             GetInput<float>(ref alphas, "Alpha");
             var port = outputContainer.Q<Port>();
             graph.processData[port] = reds.Select((r, i) => new Vector4(r, greens[i], blues[i], alphas[i])).ToArray();
+        }
+    }
+
+    class BlendNode : TextureGraphNode
+    {
+        enum BlendMode
+        {
+            Normal,
+            Addition,
+            Difference,
+            Multiplication,
+            Screen,
+            Overlay
+        }
+
+        readonly EnumField m_EnumField;
+        readonly SliderWithFloatField m_Slider;
+
+        [SerializeField]
+        int m_BlendMode = (int)BlendMode.Normal;
+        [SerializeField]
+        float m_BlendValue = 0.5f;
+
+        BlendNode() : base()
+        {
+            title = "Blend";
+            var port = AddInputPort<Vector4>("A");
+            port.name = "A";
+            port = AddInputPort<Vector4>("B");
+            port.name = "B";
+            AddOutputPort<Vector4>("Out");
+            RefreshPorts();
+            m_EnumField = new EnumField((BlendMode)m_BlendMode);
+            m_EnumField.OnValueChanged(e => m_BlendMode = (int)(BlendMode)e.newValue);
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
+            extensionContainer.Add(m_EnumField);
+            m_Slider = new SliderWithFloatField(0f, 1f, m_BlendValue, value => m_BlendValue = value, value => graph.MarkNordIsDirty());
+            extensionContainer.Add(m_Slider);
+            RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            m_EnumField.value = (BlendMode)m_BlendMode;
+            m_Slider.Query<BaseField<float>>().ForEach(f => f.value = m_BlendValue);
+        }
+
+        internal override void Process()
+        {
+            var length = graph.width * graph.height;
+            var valueA = new Vector4[length];
+            var valueB = new Vector4[length];
+            var result = new Vector4[length];
+            GetInput<Vector4>(ref valueA, "A");
+            GetInput<Vector4>(ref valueB, "B");
+            switch (m_EnumField.value)
+            {
+                case BlendMode.Normal:
+                    result = valueA.Select((v, i) => Vector4.Lerp(valueB[i], v, m_Slider.value)).ToArray();
+                    break;
+                case BlendMode.Addition:
+                    result = valueA.Select((v, i) => v * m_Slider.value + valueB[i]).ToArray();
+                    break;
+                case BlendMode.Difference:
+                    result = valueA.Select((v, i) => (v * m_Slider.value - valueB[i]).Abs()).ToArray();
+                    break;
+                case BlendMode.Multiplication:
+                    result = valueA.Select((v, i) => Vector4.Scale(valueB[i], Vector4.Lerp(Vector4.one, v, m_Slider.value))).ToArray();
+                    break;
+                case BlendMode.Screen:
+                    result = valueA.Select((v, i) => Vector4.one - Vector4.Scale(Vector4.one - valueB[i], Vector4.one - v * m_Slider.value)).ToArray();
+                    break;
+                case BlendMode.Overlay:
+                    result = valueA.Select((v, i) => valueB[i].Overlay(Vector4.Lerp(new Vector4(0.5f, 0.5f, 0.5f, 0.5f), v, m_Slider.value))).ToArray();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException("invalid enum value (BlendMode)");
+            }
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = result;
         }
     }
 
@@ -514,8 +594,6 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            if (IsProcessed())
-                return;
             var length = graph.width * graph.height;
             var valueA = new float[length];
             var valueB = new float[length];

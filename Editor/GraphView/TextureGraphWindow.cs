@@ -293,6 +293,7 @@ namespace MomomaAssets
             path = AssetDatabase.GenerateUniqueAssetPath(path);
             File.WriteAllBytes(Path.GetDirectoryName(Application.dataPath) + '/' + path, bytes);
             AssetDatabase.ImportAsset(path);
+            ProcessAll();
         }
 
         Texture2D ProcessAll()

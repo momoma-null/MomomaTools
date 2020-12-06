@@ -24,4 +24,31 @@ namespace MomomaAssets
         }
     }
 
+    class SliderWithFloatField : VisualElement
+    {
+        readonly FloatField floatField;
+        readonly Slider slider;
+
+        internal float value
+        {
+            get { return slider.value; }
+            set { slider.value = value; }
+        }
+
+        internal SliderWithFloatField(float start, float end, float initial, Action<float> valueChanged, Action<float> endValueChanged)
+        {
+            slider = new Slider(start, end, valueChanged) { style = { flexGrow = 1f } };
+            floatField = new FloatField() { style = { flexGrow = 0.8f, flexShrink = 1f } };
+            slider.OnValueChanged(e => floatField.value = e.newValue);
+            floatField.OnValueChanged(e => slider.value = e.newValue);
+            slider.RegisterCallback<MouseUpEvent>(e => { if (e.button == 0) endValueChanged.Invoke(value); });
+            floatField.RegisterCallback<FocusOutEvent>(e => endValueChanged.Invoke(value));
+            slider.value = initial;
+            floatField.value = initial;
+            style.flexDirection = FlexDirection.Row;
+            Add(slider);
+            Add(floatField);
+        }
+    }
+
 }
