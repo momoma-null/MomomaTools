@@ -41,7 +41,7 @@ namespace MomomaAssets
         ExportTextureNode m_ExportTextureNode;
         internal ExportTextureNode exportTextureNode => m_ExportTextureNode ?? (m_ExportTextureNode = nodes.ToList().Find(n => n is ExportTextureNode) as ExportTextureNode);
 
-        readonly Image m_PreviewImage;
+        readonly PreviewWindow m_PreviewWindow;
         readonly IVisualElementScheduledItem m_RecalculateScheduledItem;
 
         internal int width => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
@@ -55,8 +55,9 @@ namespace MomomaAssets
             AddStyleSheetPath("TextureGraphStyles");
             var background = new GridBackground() { style = { alignItems = Align.Center, justifyContent = Justify.Center } };
             Insert(0, background);
-            m_PreviewImage = new Image() { scaleMode = ScaleMode.ScaleToFit, pickingMode = PickingMode.Ignore, style = { positionType = PositionType.Absolute, height = 128f, width = 128f } };
-            background.Add(m_PreviewImage);
+            m_PreviewWindow = new PreviewWindow();
+            Add(m_PreviewWindow);
+            Add(new MiniMap());
             m_ExportTextureNode = new ExportTextureNode();
             AddElement(m_ExportTextureNode);
             this.AddManipulator(new SelectionDragger());
@@ -75,9 +76,9 @@ namespace MomomaAssets
 
         ~TextureGraph()
         {
-            if (m_PreviewImage?.image.value != null)
+            if (m_PreviewWindow.image != null)
             {
-                Texture.DestroyImmediate(m_PreviewImage.image.value);
+                Texture.DestroyImmediate(m_PreviewWindow.image);
             }
         }
 
@@ -263,9 +264,9 @@ namespace MomomaAssets
         {
             m_RecalculateScheduledItem.Pause();
             var texture = ProcessAll();
-            if (m_PreviewImage?.image.value != null)
-                UnityEngine.Object.DestroyImmediate(m_PreviewImage.image.value);
-            m_PreviewImage.image = texture;
+            if (m_PreviewWindow.image != null)
+                UnityEngine.Object.DestroyImmediate(m_PreviewWindow.image);
+            m_PreviewWindow.image = texture;
             Debug.Log("Recalculate");
         }
 
@@ -360,6 +361,34 @@ namespace MomomaAssets
                     graph.MarkNordIsDirty();
                 }
             }
+        }
+    }
+
+    class PreviewWindow : GraphElement
+    {
+        readonly Image m_Image;
+
+        internal Texture image
+        {
+            get { return m_Image.image.value; }
+            set { m_Image.image = value; }
+        }
+
+        internal PreviewWindow()
+        {
+            var background = new VisualElement { style = { backgroundColor = new Color(0.2470588f, 0.2470588f, 0.2470588f, 1f), borderColor = new Color(0.09803922f, 0.09803922f, 0.09803922f, 1f), borderRadius = 6f } };
+            Add(background);
+            background.StretchToParentSize();
+            m_Image = new Image() { style = { marginLeft = 4f, marginTop = 4f, marginRight = 4f, marginBottom = 4f } };
+            background.Add(m_Image);
+            m_Image.StretchToParentSize();
+            style.positionType = PositionType.Absolute;
+            style.positionRight = 0f;
+            style.positionBottom = 0f;
+            style.width = 136f;
+            style.height = 136f;
+            capabilities = Capabilities.Movable;
+            this.AddManipulator(new Dragger { clampToParentEdges = true });
         }
     }
 

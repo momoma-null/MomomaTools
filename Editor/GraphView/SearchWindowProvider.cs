@@ -21,6 +21,7 @@ namespace MomomaAssets
             var entries = new List<SearchTreeEntry>();
             entries.Add(new SearchTreeGroupEntry(new GUIContent("Create Node")));
             entries.Add(new SearchTreeEntry(new GUIContent("Stack Node")) { level = 1, userData = typeof(StackNode) });
+            entries.Add(new SearchTreeEntry(new GUIContent("Group")) { level = 1, userData = typeof(Group) });
             entries.AddRange(this.GetType().Assembly.GetTypes().
             Where(type => !type.IsAbstract && type.IsSubclassOf(typeof(TextureGraphNode)) && type != typeof(ExportTextureNode)).
             Select(type => new SearchTreeEntry(new GUIContent(type.Name.ToSentence())) { level = 1, userData = type }));

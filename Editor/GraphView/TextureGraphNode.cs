@@ -71,10 +71,21 @@ namespace MomomaAssets
 
         }
 
+        public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
+        {
+            evt.menu.AppendAction("Remove from Scope",
+             (action) => this.GetContainingScope()?.RemoveElement(this),
+             (action) => this.GetContainingScope() == null ? DropdownMenu.MenuAction.StatusFlags.Hidden : DropdownMenu.MenuAction.StatusFlags.Normal);
+            base.BuildContextualMenu(evt);
+        }
+
         public override void SetPosition(Rect newPos)
         {
-            newPos.x = Mathf.Round(newPos.x * 0.1f) * 10f;
-            newPos.y = Mathf.Round(newPos.y * 0.1f) * 10f;
+            if (selected)
+            {
+                newPos.x = Mathf.Round(newPos.x * 0.1f) * 10f;
+                newPos.y = Mathf.Round(newPos.y * 0.1f) * 10f;
+            }
             base.SetPosition(newPos);
             m_SerializePosition = newPos;
         }
@@ -387,10 +398,9 @@ namespace MomomaAssets
 
         internal override void Process()
         {
-            var width = graph.width;
-            var height = graph.height;
-            m_Colors = new Color[width * height];
-            var vectors = new Vector4[width * height];
+            var length = graph.width * graph.height;
+            m_Colors = new Color[length];
+            var vectors = new Vector4[length];
             GetInput<Vector4>(ref vectors);
             m_Colors = Array.ConvertAll(vectors, v => (Color)v);
         }
@@ -473,6 +483,32 @@ namespace MomomaAssets
         }
     }
 
+    class ConstantColor : TextureGraphNode
+    {
+        readonly Vector4Field m_VectorField;
+
+        [SerializeField]
+        Vector4 m_Value = Vector4.one;
+
+        internal ConstantColor() : base()
+        {
+            title = "Constant Color";
+            AddOutputPort<Vector4>("Value");
+            RefreshPorts();
+            m_VectorField = new Vector4Field();
+            m_VectorField.value = m_Value;
+            m_VectorField.OnValueChanged(e => m_Value = e.newValue);
+            extensionContainer.Add(m_VectorField);
+            RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            m_VectorField.value = m_Value;
+        }
+    }
+
     class BlendNode : TextureGraphNode
     {
         enum BlendMode
@@ -480,9 +516,13 @@ namespace MomomaAssets
             Normal,
             Addition,
             Difference,
-            Multiplication,
+            Multiply,
             Screen,
-            Overlay
+            Overlay,
+            HardLight,
+            SoftLight,
+            Dodge,
+            Burn
         }
 
         readonly EnumField m_EnumField;
@@ -491,7 +531,7 @@ namespace MomomaAssets
         [SerializeField]
         int m_BlendMode = (int)BlendMode.Normal;
         [SerializeField]
-        float m_BlendValue = 0.5f;
+        float m_BlendValue = 1f;
 
         BlendNode() : base()
         {
@@ -529,28 +569,90 @@ namespace MomomaAssets
             switch (m_EnumField.value)
             {
                 case BlendMode.Normal:
-                    result = valueA.Select((v, i) => Vector4.Lerp(valueB[i], v, m_Slider.value)).ToArray();
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a)).ToArray();
                     break;
                 case BlendMode.Addition:
-                    result = valueA.Select((v, i) => v * m_Slider.value + valueB[i]).ToArray();
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a + b)).ToArray();
                     break;
                 case BlendMode.Difference:
-                    result = valueA.Select((v, i) => (v * m_Slider.value - valueB[i]).Abs()).ToArray();
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Math.Abs(a - b))).ToArray();
                     break;
-                case BlendMode.Multiplication:
-                    result = valueA.Select((v, i) => Vector4.Scale(valueB[i], Vector4.Lerp(Vector4.one, v, m_Slider.value))).ToArray();
+                case BlendMode.Multiply:
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a * b)).ToArray();
                     break;
                 case BlendMode.Screen:
-                    result = valueA.Select((v, i) => Vector4.one - Vector4.Scale(Vector4.one - valueB[i], Vector4.one - v * m_Slider.value)).ToArray();
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => 1f - (1f - a) * (1f - b))).ToArray();
                     break;
                 case BlendMode.Overlay:
-                    result = valueA.Select((v, i) => valueB[i].Overlay(Vector4.Lerp(new Vector4(0.5f, 0.5f, 0.5f, 0.5f), v, m_Slider.value))).ToArray();
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Overlay(a, b))).ToArray();
+                    break;
+                case BlendMode.HardLight:
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Overlay(b, a))).ToArray();
+                    break;
+                case BlendMode.SoftLight:
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => SoftLight(a, b))).ToArray();
+                    break;
+                case BlendMode.Dodge:
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => SafetyDivide(b, (1f - a)))).ToArray();
+                    break;
+                case BlendMode.Burn:
+                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => 1f - SafetyDivide(1f - b, a))).ToArray();
                     break;
                 default:
                     throw new ArgumentOutOfRangeException("invalid enum value (BlendMode)");
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = result;
+        }
+
+        static Vector4 BlendEachChannel(Vector4 a, Vector4 b, float blendValue, Func<float, float, float> blend)
+        {
+            float newAlpha = Mathf.Lerp(b.w, 1f, blendValue * a.w);
+            return new Vector4(SafetyDivide(Mathf.Lerp(b.x, blend.Invoke(a.x, b.x * b.w), blendValue * a.w), newAlpha),
+                               SafetyDivide(Mathf.Lerp(b.y, blend.Invoke(a.y, b.y * b.w), blendValue * a.w), newAlpha),
+                               SafetyDivide(Mathf.Lerp(b.z, blend.Invoke(a.z, b.z * b.w), blendValue * a.w), newAlpha),
+                               newAlpha);
+        }
+
+        static float SafetyDivide(float a, float b)
+        {
+            return b == 0 ? 0 : a / b;
+        }
+
+        static float Overlay(float a, float b)
+        {
+            return 0.5 < b ? b * a * 2f : 1f - (1f - b) * (1f - a) * 2f;
+        }
+
+        static float SoftLight(float a, float b)
+        {
+            return (1f - 2f * b) * a * a + 2f * b * a;
+        }
+    }
+
+    class ConstantFloat : TextureGraphNode
+    {
+        readonly FloatField m_FloatField;
+
+        [SerializeField]
+        float m_Value = 1f;
+
+        internal ConstantFloat() : base()
+        {
+            title = "Constant Float";
+            AddOutputPort<float>("Value");
+            RefreshPorts();
+            m_FloatField = new FloatField();
+            m_FloatField.value = m_Value;
+            m_FloatField.OnValueChanged(e => m_Value = e.newValue);
+            extensionContainer.Add(m_FloatField);
+            RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            m_FloatField.value = m_Value;
         }
     }
 

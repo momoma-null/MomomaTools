@@ -71,17 +71,12 @@ namespace MomomaAssets
 
         void OnDisable()
         {
+            s_actualViewInfo.SetValue(parent, this);
             Clear();
         }
 
         void OnGUI()
         {
-            if (EditorApplication.isCompiling)
-            {
-                EditorGUILayout.HelpBox("Compiling...", MessageType.Info);
-                Clear();
-                return;
-            }
             var removingWindows = m_InspectorWindows.Where((win, i) => win != null && i != 0 && !(s_TrackerInfo.GetValue(win) as ActiveEditorTracker).isLocked).ToArray();
             foreach (var win in removingWindows)
             {
@@ -371,11 +366,12 @@ namespace MomomaAssets
                                     {
                                         if (sp.isArray)
                                         {
-                                            if (!child.Next(true) || SerializedProperty.EqualContents(child, end))
-                                                return;
-                                            PropertyFieldRecursive(child);
-                                            if (!child.Next(false))
-                                                return;
+                                            while(child.propertyType != SerializedPropertyType.ArraySize)
+                                            {
+                                                child.Next(true);
+                                            }
+                                            EditorGUILayout.PropertyField(child);
+                                            child.Next(false);
                                         }
                                         var count = 0;
                                         while (!SerializedProperty.EqualContents(child, end))
