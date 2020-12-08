@@ -33,7 +33,6 @@ namespace MomomaAssets
             var type = entry.userData as Type;
             var node = Activator.CreateInstance(type, true) as Node;
             graphView.AddElement(node);
-            graphView.MarkNordIsDirty();
             var rect = new Rect();
             var root = graphView.window.GetRootVisualContainer();
             rect.position = graphView.contentViewContainer.WorldToLocal(root.ChangeCoordinatesTo(root.parent, context.screenMousePosition - graphView.window.position.position));

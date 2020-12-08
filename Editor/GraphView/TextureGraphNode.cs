@@ -9,66 +9,75 @@ using UnityEditor;
 using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
 using UnityEngine.Experimental.UIElements.StyleSheets;
-using MomomaAssets.Utility;
 
 namespace MomomaAssets
 {
 
-    interface ISerializableNode : ISerializationCallbackReceiver
+    interface ISerializableNode
     {
-        string guid { get; }
-        Rect serializePosition { get; }
-        string[] inputPortGuids { get; }
-        string[] outputPortGuids { get; }
+        NodeObject nodeObject { get; }
 
-        void ReloadGuids();
+        void OnAfterDeserialize();
     }
 
-    [Serializable]
     class TextureGraphNode : Node, ISerializableNode
     {
-        static readonly Color s_BackgroundColor = new Color(0.1803922f, 0.1803922f, 0.1803922f, 0.8039216f);
-
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
 
-        [SerializeField]
-        string m_Guid;
-        public string guid => m_Guid;
-        [SerializeField]
-        Rect m_SerializePosition;
-        public Rect serializePosition => m_SerializePosition;
-        [SerializeField]
-        List<string> m_InputPortGuids = new List<string>();
-        public string[] inputPortGuids => m_InputPortGuids.ToArray();
-        [SerializeField]
-        List<string> m_OutputPortGuids = new List<string>();
-        public string[] outputPortGuids => m_OutputPortGuids.ToArray();
+        public NodeObject nodeObject { get; private set; }
+        protected readonly SerializedObject serializedObject;
+
+        readonly SerializedProperty m_Guid;
+        readonly SerializedProperty m_Position;
+        readonly SerializedProperty m_InputPortGuids;
+        readonly SerializedProperty m_OutputPortGuids;
+        protected readonly SerializedProperty floatValues;
+        protected readonly SerializedProperty integerValues;
+        protected readonly SerializedProperty boolValues;
+        protected readonly SerializedProperty stringValues;
+        protected readonly SerializedProperty objectReferenceValues;
 
         protected TextureGraphNode() : base()
         {
             style.maxWidth = 150f;
-            extensionContainer.style.backgroundColor = s_BackgroundColor;
-            m_Guid = persistenceKey;
-            var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
-            scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
+            extensionContainer.style.backgroundColor = new Color(0.1803922f, 0.1803922f, 0.1803922f, 0.8039216f);
+            nodeObject = ScriptableObject.CreateInstance<NodeObject>();
+            serializedObject = new SerializedObject(nodeObject);
+            m_Guid = serializedObject.FindProperty("m_Guid");
+            m_Position = serializedObject.FindProperty("m_Position");
+            m_InputPortGuids = serializedObject.FindProperty("m_InputPortGuids");
+            m_OutputPortGuids = serializedObject.FindProperty("m_OutputPortGuids");
+            floatValues = serializedObject.FindProperty("m_FloatValues");
+            integerValues = serializedObject.FindProperty("m_IntegerValues");
+            boolValues = serializedObject.FindProperty("m_BoolValues");
+            stringValues = serializedObject.FindProperty("m_StringValues");
+            objectReferenceValues = serializedObject.FindProperty("m_ObjectRederenceValues");
+            m_Guid.stringValue = persistenceKey;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            var scheduleItem = schedule.Execute(() => RecordPosition(true));
+            scheduleItem.Until(() => !float.IsNaN(GetPosition().width));
         }
 
-        public void ReloadGuids()
+        ~TextureGraphNode()
         {
-            m_InputPortGuids = inputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
-            m_OutputPortGuids = outputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
-            m_Guid = persistenceKey;
+            if (nodeObject != null)
+                UnityEngine.Object.DestroyImmediate(nodeObject);
         }
 
         public virtual void OnAfterDeserialize()
         {
-            SetPosition(m_SerializePosition);
-        }
-
-        public virtual void OnBeforeSerialize()
-        {
-
+            serializedObject.Update();
+            m_Guid.stringValue = persistenceKey;
+            var newGuids = inputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
+            m_InputPortGuids.arraySize = newGuids.Count;
+            for (var i = 0; i < newGuids.Count; ++i)
+                m_InputPortGuids.GetArrayElementAtIndex(i).stringValue = newGuids[i];
+            newGuids = outputContainer.Query<Port>().ToList().Select(p => p.persistenceKey).ToList();
+            m_OutputPortGuids.arraySize = newGuids.Count;
+            for (var i = 0; i < newGuids.Count; ++i)
+                m_OutputPortGuids.GetArrayElementAtIndex(i).stringValue = newGuids[i];
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
         }
 
         public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
@@ -87,13 +96,23 @@ namespace MomomaAssets
                 newPos.y = Mathf.Round(newPos.y * 0.1f) * 10f;
             }
             base.SetPosition(newPos);
-            m_SerializePosition = newPos;
+            RecordPosition();
         }
 
         public override void UpdatePresenterPosition()
         {
             base.UpdatePresenterPosition();
-            m_SerializePosition = GetPosition();
+            RecordPosition();
+        }
+
+        void RecordPosition(bool withoutUndo = false)
+        {
+            serializedObject.Update();
+            m_Position.rectValue = GetPosition();
+            if (withoutUndo)
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            else
+                serializedObject.ApplyModifiedProperties();
         }
 
         internal virtual void Process() { }
@@ -154,7 +173,10 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, typeof(T));
             port.portName = portName;
             inputContainer.Add(port);
-            m_InputPortGuids.Add(port.persistenceKey);
+            serializedObject.Update();
+            ++m_InputPortGuids.arraySize;
+            m_InputPortGuids.GetArrayElementAtIndex(m_InputPortGuids.arraySize - 1).stringValue = port.persistenceKey;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             return port;
         }
 
@@ -163,88 +185,102 @@ namespace MomomaAssets
             var port = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(T));
             port.portName = portName;
             outputContainer.Add(port);
-            m_OutputPortGuids.Add(port.persistenceKey);
+            serializedObject.Update();
+            ++m_OutputPortGuids.arraySize;
+            m_OutputPortGuids.GetArrayElementAtIndex(m_OutputPortGuids.arraySize - 1).stringValue = port.persistenceKey;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             return port;
         }
     }
 
-    [Serializable]
     class SerializableTokenNode : TokenNode, ISerializableNode
     {
-        [SerializeField]
-        string m_Guid;
-        public string guid => m_Guid;
-        [SerializeField]
-        Rect m_SerializePosition;
-        public Rect serializePosition => m_SerializePosition;
-        [SerializeField]
-        List<string> m_InputPortGuids = new List<string>();
-        public string[] inputPortGuids => m_InputPortGuids.ToArray();
-        [SerializeField]
-        List<string> m_OutputPortGuids = new List<string>();
-        public string[] outputPortGuids => m_OutputPortGuids.ToArray();
+        public NodeObject nodeObject { get; private set; }
+        protected readonly SerializedObject serializedObject;
 
-        [SerializeField]
-        string m_InputType;
-        [SerializeField]
-        string m_OutputType;
+        readonly SerializedProperty m_Guid;
+        readonly SerializedProperty m_Position;
+        readonly SerializedProperty m_InputPortGuids;
+        readonly SerializedProperty m_OutputPortGuids;
+        protected readonly SerializedProperty floatValues;
+        protected readonly SerializedProperty integerValues;
+        protected readonly SerializedProperty boolValues;
+        protected readonly SerializedProperty stringValues;
 
-        SerializableTokenNode() : this(Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, null), Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, null)) { }
+        SerializableTokenNode() : this(null, null) { }
         internal SerializableTokenNode(Port input, Port output) : base(input, output)
         {
-            m_Guid = persistenceKey;
-            m_InputPortGuids.Add(input.persistenceKey);
-            m_OutputPortGuids.Add(output.persistenceKey);
-            m_InputType = input.portType?.AssemblyQualifiedName;
-            m_OutputType = output.portType?.AssemblyQualifiedName;
+            if (input == null)
+                input = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Input, Port.Capacity.Single, null);
+            if (output == null)
+                output = Port.Create<TextureGraphEdge>(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, null);
+            nodeObject = ScriptableObject.CreateInstance<NodeObject>();
+            serializedObject = new SerializedObject(nodeObject);
+            m_Guid = serializedObject.FindProperty("m_Guid");
+            m_Position = serializedObject.FindProperty("m_Position");
+            m_InputPortGuids = serializedObject.FindProperty("m_InputPortGuids");
+            m_OutputPortGuids = serializedObject.FindProperty("m_OutputPortGuids");
+            stringValues = serializedObject.FindProperty("m_StringValues");
+            m_Guid.stringValue = persistenceKey;
+            m_InputPortGuids.arraySize = 1;
+            m_InputPortGuids.GetArrayElementAtIndex(0).stringValue = input.persistenceKey;
+            m_OutputPortGuids.arraySize = 1;
+            m_OutputPortGuids.GetArrayElementAtIndex(0).stringValue = output.persistenceKey;
+            stringValues.arraySize = 2;
+            stringValues.GetArrayElementAtIndex(0).stringValue = input.portType?.AssemblyQualifiedName;
+            stringValues.GetArrayElementAtIndex(1).stringValue = output.portType?.AssemblyQualifiedName;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             if (input.portType == null || output.portType == null)
             {
                 var typeScheduleItem = schedule.Execute(() => SetPortType());
                 typeScheduleItem.Until(() => input.portType != null && output.portType != null);
             }
-            var scheduleItem = schedule.Execute(() => m_SerializePosition = GetPosition());
-            scheduleItem.Until(() => !float.IsNaN(m_SerializePosition.width));
+            var scheduleItem = schedule.Execute(() => RecordPosition(true));
+            scheduleItem.Until(() => !float.IsNaN(GetPosition().width));
         }
 
         void SetPortType()
         {
-            if (!string.IsNullOrEmpty(m_InputType))
-            {
-                input.portType = Type.GetType(m_InputType);
-            }
-            if (!string.IsNullOrEmpty(m_OutputType))
-            {
-                output.portType = Type.GetType(m_OutputType);
-            }
-        }
-
-        public void ReloadGuids()
-        {
-            m_InputPortGuids = new List<string>() { input.persistenceKey };
-            m_OutputPortGuids = new List<string>() { output.persistenceKey };
-            m_Guid = persistenceKey;
+            serializedObject.Update();
+            var inputPortTypeName = stringValues.GetArrayElementAtIndex(0).stringValue;
+            var outputPortTypeName = stringValues.GetArrayElementAtIndex(1).stringValue;
+            if (!string.IsNullOrEmpty(inputPortTypeName))
+                input.portType = Type.GetType(inputPortTypeName);
+            if (!string.IsNullOrEmpty(outputPortTypeName))
+                output.portType = Type.GetType(outputPortTypeName);
         }
 
         public virtual void OnAfterDeserialize()
         {
-            SetPosition(m_SerializePosition);
-        }
-
-        public virtual void OnBeforeSerialize()
-        {
-
+            serializedObject.Update();
+            m_Guid.stringValue = persistenceKey;
+            m_InputPortGuids.arraySize = 1;
+            m_InputPortGuids.GetArrayElementAtIndex(0).stringValue = input.persistenceKey;
+            m_OutputPortGuids.arraySize = 1;
+            m_OutputPortGuids.GetArrayElementAtIndex(0).stringValue = output.persistenceKey;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
         }
 
         public override void SetPosition(Rect newPos)
         {
             base.SetPosition(newPos);
-            m_SerializePosition = newPos;
+            RecordPosition();
         }
 
         public override void UpdatePresenterPosition()
         {
             base.UpdatePresenterPosition();
-            m_SerializePosition = GetPosition();
+            RecordPosition();
+        }
+
+        void RecordPosition(bool withoutUndo = false)
+        {
+            serializedObject.Update();
+            m_Position.rectValue = GetPosition();
+            if (withoutUndo)
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            else
+                serializedObject.ApplyModifiedProperties();
         }
     }
 
@@ -256,20 +292,22 @@ namespace MomomaAssets
         int m_Width;
         int m_Height;
 
-        [SerializeField]
-        Texture2D m_ImageTexture;
-
         internal ImportTextureNode() : base()
         {
             title = "Import Texture";
+            style.width = 136f;
+            objectReferenceValues.arraySize = 1;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
             objectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
             objectField[0].style.flexShrink = 1f;
             objectField[0][1].style.flexShrink = 1f;
             objectField.OnValueChanged(OnValueChanged);
+            objectField.Bind(serializedObject);
+            objectField.BindProperty(objectReferenceValues.GetArrayElementAtIndex(0));
             extensionContainer.Add(objectField);
-            image = new Image() { scaleMode = ScaleMode.ScaleToFit, style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f } };
+            image = new Image { scaleMode = ScaleMode.ScaleToFit, style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f, marginRight = 3f, marginLeft = 3f } };
             extensionContainer.Add(image);
             RefreshExpandedState();
         }
@@ -283,13 +321,11 @@ namespace MomomaAssets
         public override void OnAfterDeserialize()
         {
             base.OnAfterDeserialize();
-            objectField.value = m_ImageTexture;
             schedule.Execute(() => ReloadTexture()).Until(() => graph != null);
         }
 
         void OnValueChanged(ChangeEvent<UnityEngine.Object> e)
         {
-            m_ImageTexture = e.newValue as Texture2D;
             ReloadTexture();
             graph.MarkNordIsDirty();
         }
@@ -498,6 +534,7 @@ namespace MomomaAssets
             m_VectorField = new Vector4Field();
             m_VectorField.value = m_Value;
             m_VectorField.OnValueChanged(e => m_Value = e.newValue);
+            m_VectorField.OnValueChanged(e => graph.MarkNordIsDirty());
             extensionContainer.Add(m_VectorField);
             RefreshExpandedState();
         }
@@ -645,6 +682,7 @@ namespace MomomaAssets
             m_FloatField = new FloatField();
             m_FloatField.value = m_Value;
             m_FloatField.OnValueChanged(e => m_Value = e.newValue);
+            m_FloatField.OnValueChanged(e => graph.MarkNordIsDirty());
             extensionContainer.Add(m_FloatField);
             RefreshExpandedState();
         }
@@ -684,6 +722,7 @@ namespace MomomaAssets
             RefreshPorts();
             m_EnumField = new EnumField((CalculateMode)m_CalculateMode);
             m_EnumField.OnValueChanged(e => m_CalculateMode = (int)(CalculateMode)e.newValue);
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
@@ -727,6 +766,77 @@ namespace MomomaAssets
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = result;
+        }
+    }
+
+    class BumpMapNode : TextureGraphNode
+    {
+        enum BumpMapType
+        {
+            Normal,
+            Height
+        }
+
+        readonly EnumField m_EnumField;
+
+        [SerializeField]
+        int m_BumpMapType = (int)BumpMapType.Normal;
+
+        BumpMapNode() : base()
+        {
+            title = "Bump Map";
+            var port = AddInputPort<Vector4>();
+            AddOutputPort<Vector4>();
+            RefreshPorts();
+            m_EnumField = new EnumField((BumpMapType)m_BumpMapType);
+            m_EnumField.OnValueChanged(e => m_BumpMapType = (int)(BumpMapType)e.newValue);
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
+            extensionContainer.Add(m_EnumField);
+            RefreshExpandedState();
+        }
+
+        public override void OnAfterDeserialize()
+        {
+            base.OnAfterDeserialize();
+            m_EnumField.value = (BumpMapType)m_BumpMapType;
+        }
+
+        internal override void Process()
+        {
+            var width = graph.width;
+            var height = graph.height;
+            var length = width * height;
+            var inputs = new Vector4[length];
+            var outputs = new Vector4[length];
+            GetInput<Vector4>(ref inputs);
+            switch (m_EnumField.value)
+            {
+                case BumpMapType.Normal:
+                    var heights = inputs.Select(v => ConvertToHeight(v).x).ToArray();
+                    outputs = heights.Select((h, i) => ConvertToNormal(h, heights[(i - width + length) % length], heights[(i + width) % length], heights[(i + 1) - (i % width == width - 1 ? width : 0)], heights[(i - 1) + (i % width == 0 ? width : 0)])).ToArray();
+                    break;
+                case BumpMapType.Height:
+                    outputs = inputs.Select(ConvertToHeight).ToArray();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException("invalid enum value (BumpMapType)");
+            }
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = outputs;
+        }
+
+        Vector4 ConvertToHeight(Vector4 v)
+        {
+            float height = (v.x + v.y + v.z) / 3f;
+            return new Vector4(height, height, height, 1f);
+        }
+
+        Vector4 ConvertToNormal(float v, float u, float b, float r, float l)
+        {
+            var vertical = ((u - v) + (v - b)) * 0.5f;
+            var horizontal = ((r - v) + (v - l)) * 0.5f;
+            var normal = new Vector3(vertical, horizontal, 0.1f).normalized;
+            return new Vector4(normal.x * 0.5f + 0.5f, normal.y * 0.5f + 0.5f, normal.z * 0.5f + 0.5f, 1f);
         }
     }
 

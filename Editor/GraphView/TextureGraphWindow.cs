@@ -173,7 +173,7 @@ namespace MomomaAssets
 
         string OnSerializeGraphElements(IEnumerable<GraphElement> elements)
         {
-            return string.Join("\n", elements.Select(e => e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson(e)));
+            return string.Join("\n", elements.Select(e => e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson((e as ISerializableNode).nodeObject)));
         }
 
         void OnUnserializeAndPaste(string operationName, string data)
@@ -189,29 +189,29 @@ namespace MomomaAssets
                     continue;
                 if (element is Node node && element is ISerializableNode serializableNode)
                 {
-                    EditorJsonUtility.FromJsonOverwrite(subs[1], element);
+                    EditorJsonUtility.FromJsonOverwrite(subs[1], serializableNode.nodeObject);
                     AddElement(element);
                     MarkNordIsDirty();
-                    nodes[serializableNode.guid] = (node, serializableNode);
+                    nodes[serializableNode.nodeObject.guid] = (node, serializableNode);
                     if (node is TokenNode token)
                     {
-                        ports[serializableNode.inputPortGuids[0]] = token.input;
-                        ports[serializableNode.outputPortGuids[0]] = token.output;
+                        ports[serializableNode.nodeObject.inputPortGuids[0]] = token.input;
+                        ports[serializableNode.nodeObject.outputPortGuids[0]] = token.output;
                     }
                     else
                     {
                         var iPorts = new Queue<Port>(node.inputContainer.Query<Port>().ToList());
-                        foreach (var guid in serializableNode.inputPortGuids)
+                        foreach (var guid in serializableNode.nodeObject.inputPortGuids)
                         {
                             ports[guid] = iPorts.Dequeue();
                         }
                         var oPorts = new Queue<Port>(node.outputContainer.Query<Port>().ToList());
-                        foreach (var guid in serializableNode.outputPortGuids)
+                        foreach (var guid in serializableNode.nodeObject.outputPortGuids)
                         {
                             ports[guid] = oPorts.Dequeue();
                         }
                     }
-                    serializableNode.ReloadGuids();
+                    serializableNode.OnAfterDeserialize();
                 }
                 else if (element is TextureGraphEdge edge)
                 {
@@ -232,9 +232,9 @@ namespace MomomaAssets
                 AddElement(edge);
             }
             var allRect = Rect.zero;
-            foreach (var pair in nodes)
+            foreach (var value in nodes.Values)
             {
-                var rect = pair.Value.Item2.serializePosition;
+                var rect = value.Item2.nodeObject.position;
                 if (allRect == Rect.zero)
                     allRect = rect;
                 else
@@ -247,11 +247,11 @@ namespace MomomaAssets
                 }
             }
             var offset = contentViewContainer.WorldToLocal(contentRect.center) - allRect.center;
-            foreach (var pair in nodes)
+            foreach (var value in nodes.Values)
             {
-                var rect = pair.Value.Item2.serializePosition;
+                var rect = value.Item2.nodeObject.position;
                 rect.position += offset;
-                pair.Value.Item1.SetPosition(rect);
+                value.Item1.SetPosition(rect);
             }
         }
 
@@ -376,18 +376,22 @@ namespace MomomaAssets
 
         internal PreviewWindow()
         {
-            var background = new VisualElement { style = { backgroundColor = new Color(0.2470588f, 0.2470588f, 0.2470588f, 1f), borderColor = new Color(0.09803922f, 0.09803922f, 0.09803922f, 1f), borderRadius = 6f } };
-            Add(background);
-            background.StretchToParentSize();
-            m_Image = new Image() { style = { marginLeft = 4f, marginTop = 4f, marginRight = 4f, marginBottom = 4f } };
-            background.Add(m_Image);
-            m_Image.StretchToParentSize();
+            style.backgroundColor = new Color(0.2470588f, 0.2470588f, 0.2470588f, 1f);
+            style.borderColor = new Color(0.09803922f, 0.09803922f, 0.09803922f, 1f);
+            style.borderRadius = 6f;
             style.positionType = PositionType.Absolute;
-            style.positionRight = 0f;
-            style.positionBottom = 0f;
+            style.positionRight = 4f;
+            style.positionBottom = 4f;
             style.width = 136f;
             style.height = 136f;
+            style.marginRight = 0f;
+            style.marginLeft = 0f;
+            style.marginTop = 0f;
+            style.marginBottom = 0f;
             capabilities = Capabilities.Movable;
+            m_Image = new Image { style = { marginRight = 3f, marginLeft = 3f, marginTop = 3f, marginBottom = 3f } };
+            Add(m_Image);
+            m_Image.StretchToParentSize();
             this.AddManipulator(new Dragger { clampToParentEdges = true });
         }
     }
