@@ -35,6 +35,12 @@ namespace MomomaAssets
             set { slider.value = value; }
         }
 
+        internal void BindProperty(SerializedProperty property)
+        {
+            floatField.BindProperty(property);
+            slider.BindProperty(property);
+        }
+
         internal SliderWithFloatField(float start, float end, float initial, Action<float> valueChanged, Action<float> endValueChanged)
         {
             slider = new Slider(start, end, valueChanged) { style = { flexGrow = 1f } };

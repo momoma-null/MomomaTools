@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEditor.Experimental.UIElements.GraphView;
 
 namespace MomomaAssets
 {
@@ -7,7 +8,7 @@ namespace MomomaAssets
     public class NodeObject : ScriptableObject
     {
         [SerializeField]
-        string m_Guid;
+        string m_Guid = "";
         public string guid => m_Guid;
 
         [SerializeField]
@@ -41,6 +42,10 @@ namespace MomomaAssets
         [SerializeField]
         List<Object> m_ObjectRederenceValues = new List<Object>();
         public Object[] objectReferenceValues => m_ObjectRederenceValues.ToArray();
+
+        [SerializeField]
+        List<Vector4> m_Vector4Values = new List<Vector4>();
+        public Vector4[] vector4Values => m_Vector4Values.ToArray();
     }
 
 }
