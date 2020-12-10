@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -28,6 +29,11 @@ namespace MomomaAssets
             m_TextureGraph = new TextureGraph(this) { style = { flexGrow = 1 } };
             rootVisualElement.Add(m_TextureGraph);
         }
+
+        void OnDisable()
+        {
+            m_TextureGraph = null;
+        }
     }
 
     class TextureGraph : GraphView
@@ -38,17 +44,43 @@ namespace MomomaAssets
         TextureGraphData m_GraphData;
         internal TextureGraphData graphData
         {
-            get { return m_GraphData; }
+            get
+            {
+                if (m_GraphData == null)
+                    CreateDataObject();
+                return m_GraphData;
+            }
+
             set
             {
+                if (value == null)
+                    throw new ArgumentNullException("graphData");
+                if (value == m_GraphData)
+                    return;
                 m_GraphData = value;
-                serializedObject = new SerializedObject(m_GraphData);
-                m_Nodes = serializedObject.FindProperty("m_Nodes");
-                m_Edges = serializedObject.FindProperty("m_Edges");
+                m_SerializedObject = new SerializedObject(m_GraphData);
+                m_Nodes = m_SerializedObject.FindProperty("m_Nodes");
+                m_Edges = m_SerializedObject.FindProperty("m_Edges");
+                FullReload();
             }
         }
 
-        SerializedObject serializedObject;
+        SerializedObject m_SerializedObject;
+        SerializedObject serializedObject
+        {
+            get
+            {
+                if (m_SerializedObject == null || m_SerializedObject.targetObject == null)
+                    CreateDataObject();
+                return m_SerializedObject;
+            }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException("serializedObject");
+                m_SerializedObject = value;
+            }
+        }
         SerializedProperty m_Nodes;
         SerializedProperty m_Edges;
 
@@ -57,8 +89,6 @@ namespace MomomaAssets
 
         readonly PreviewWindow m_PreviewWindow;
         readonly IVisualElementScheduledItem m_RecalculateScheduledItem;
-        readonly HashSet<NodeObject> m_NodeObjectHolder = new HashSet<NodeObject>();
-        readonly HashSet<EdgeObject> m_EdgeObjectHolder = new HashSet<EdgeObject>();
 
         internal int width => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
         internal int height => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value : 128;
@@ -68,7 +98,7 @@ namespace MomomaAssets
         internal TextureGraph(TextureGraphWindow window) : base()
         {
             this.window = window;
-            graphData = ScriptableObject.CreateInstance<TextureGraphData>();
+            CreateDataObject();
             AddStyleSheetPath("TextureGraphStyles");
             var background = new GridBackground() { style = { alignItems = Align.Center, justifyContent = Justify.Center } };
             Insert(0, background);
@@ -77,8 +107,6 @@ namespace MomomaAssets
             Add(new MiniMap());
             Add(new Button(SaveAsAsset) { text = "Save Graph", style = { alignSelf = Align.FlexEnd } });
             Add(new Button(SaveTexture) { text = "Export Texture", style = { alignSelf = Align.FlexEnd } });
-            m_ExportTextureNode = new ExportTextureNode();
-            AddElementWithRecord(m_ExportTextureNode, true);
             this.AddManipulator(new SelectionDragger());
             this.AddManipulator(new ContentDragger());
             this.AddManipulator(new ContentZoomer());
@@ -98,9 +126,17 @@ namespace MomomaAssets
         ~TextureGraph()
         {
             if (m_PreviewWindow.image != null)
-            {
-                Texture.DestroyImmediate(m_PreviewWindow.image);
-            }
+                UnityEngine.Object.DestroyImmediate(m_PreviewWindow.image);
+            if (string.IsNullOrEmpty(AssetDatabase.GetAssetPath(graphData)))
+                UnityEngine.Object.DestroyImmediate(graphData);
+        }
+
+        void CreateDataObject()
+        {
+            graphData = ScriptableObject.CreateInstance<TextureGraphData>();
+            graphData.hideFlags = HideFlags.DontSave;
+            m_ExportTextureNode = new ExportTextureNode();
+            AddElementWithRecord(m_ExportTextureNode, true);
         }
 
         public override void OnPersistentDataReady()
@@ -151,43 +187,65 @@ namespace MomomaAssets
             }
         }
 
+        internal void UpdateNodeObject(ISerializableNode node, bool withoutUndo = false)
+        {
+            var index = Array.FindIndex(graphData.nodes, d => d.guid == node.guid);
+            if (index < 0)
+                return;
+            serializedObject.Update();
+            m_Nodes.GetArrayElementAtIndex(index).FindPropertyRelative("m_SerializedNodeObject").stringValue = EditorJsonUtility.ToJson(node.nodeObject);
+            if (withoutUndo)
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            else
+                serializedObject.ApplyModifiedProperties();
+        }
+
+        internal void UpdateEdgeObject(TextureGraphEdge edge, bool withoutUndo = false)
+        {
+            var index = Array.FindIndex(graphData.edges, d => d.guid == edge.guid);
+            if (index < 0)
+                return;
+            serializedObject.Update();
+            m_Edges.GetArrayElementAtIndex(index).FindPropertyRelative("m_SerializedEdgeObject").stringValue = EditorJsonUtility.ToJson(edge.edgeObject);
+            if (withoutUndo)
+                serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            else
+                serializedObject.ApplyModifiedProperties();
+        }
+
         internal void AddElementWithRecord(GraphElement element, bool withoutUndo = false, bool onlyRecord = false)
         {
             if (!onlyRecord)
                 AddElement(element);
             if (element is ISerializableNode serializableNode)
             {
-                if (Array.Exists(graphData.nodes, data => data.nodeObject == serializableNode.nodeObject))
+                if (Array.Exists(graphData.nodes, data => data.guid == serializableNode.guid))
                     return;
-                if (AssetDatabase.IsMainAsset(graphData))
-                    AssetDatabase.AddObjectToAsset(serializableNode.nodeObject, graphData);
                 serializedObject.Update();
                 ++m_Nodes.arraySize;
                 var nodeData = m_Nodes.GetArrayElementAtIndex(m_Nodes.arraySize - 1);
                 nodeData.FindPropertyRelative("m_TypeName").stringValue = element.GetType().AssemblyQualifiedName;
-                nodeData.FindPropertyRelative("m_NodeObject").objectReferenceValue = serializableNode.nodeObject;
+                nodeData.FindPropertyRelative("m_Guid").stringValue = serializableNode.guid;
+                nodeData.FindPropertyRelative("m_SerializedNodeObject").stringValue = EditorJsonUtility.ToJson(serializableNode.nodeObject);
                 if (withoutUndo)
                     serializedObject.ApplyModifiedPropertiesWithoutUndo();
                 else
                     serializedObject.ApplyModifiedProperties();
-                m_NodeObjectHolder.Add(serializableNode.nodeObject);
             }
             else if (element is TextureGraphEdge edge)
             {
-                if (Array.Exists(graphData.edges, data => data.edgeObject == edge.edgeObject))
+                if (Array.Exists(graphData.edges, data => data.guid == edge.guid))
                     return;
-                if (AssetDatabase.IsMainAsset(graphData))
-                    AssetDatabase.AddObjectToAsset(edge.edgeObject, graphData);
                 serializedObject.Update();
                 ++m_Edges.arraySize;
                 var edgeData = m_Edges.GetArrayElementAtIndex(m_Edges.arraySize - 1);
                 edgeData.FindPropertyRelative("m_TypeName").stringValue = element.GetType().AssemblyQualifiedName;
-                edgeData.FindPropertyRelative("m_EdgeObject").objectReferenceValue = edge.edgeObject;
+                edgeData.FindPropertyRelative("m_Guid").stringValue = edge.guid;
+                edgeData.FindPropertyRelative("m_SerializedEdgeObject").stringValue = EditorJsonUtility.ToJson(edge.edgeObject);
                 if (withoutUndo)
                     serializedObject.ApplyModifiedPropertiesWithoutUndo();
                 else
                     serializedObject.ApplyModifiedProperties();
-                m_EdgeObjectHolder.Add(edge.edgeObject);
             }
         }
 
@@ -212,17 +270,23 @@ namespace MomomaAssets
                         continue;
                     if (element is ISerializableNode serializableNode)
                     {
-                        var index = Array.FindIndex(graphData.nodes, data => data.nodeObject == serializableNode.nodeObject);
-                        serializedObject.Update();
-                        m_Nodes.DeleteArrayElementAtIndex(index);
-                        serializedObject.ApplyModifiedProperties();
+                        var index = Array.FindIndex(graphData.nodes, data => data.guid == serializableNode.guid);
+                        if (index >= 0)
+                        {
+                            serializedObject.Update();
+                            m_Nodes.DeleteArrayElementAtIndex(index);
+                            serializedObject.ApplyModifiedProperties();
+                        }
                     }
                     else if (element is TextureGraphEdge edge)
                     {
-                        var index = Array.FindIndex(graphData.edges, data => data.edgeObject == edge.edgeObject);
-                        serializedObject.Update();
-                        m_Edges.DeleteArrayElementAtIndex(index);
-                        serializedObject.ApplyModifiedProperties();
+                        var index = Array.FindIndex(graphData.edges, data => data.guid == edge.guid);
+                        if (index >= 0)
+                        {
+                            serializedObject.Update();
+                            m_Edges.DeleteArrayElementAtIndex(index);
+                            serializedObject.ApplyModifiedProperties();
+                        }
                     }
                 }
             }
@@ -234,20 +298,27 @@ namespace MomomaAssets
             FullReload();
         }
 
-        public void FullReload()
+        void FullReload()
         {
-            var viewNodeObjects = new HashSet<NodeObject>(nodes.ToList().Select(e => (e as ISerializableNode).nodeObject));
-            var toAddNodes = graphData.nodes.Where(d => !viewNodeObjects.Contains(d.nodeObject)).ToArray();
-            var dataNodeObjects = new HashSet<NodeObject>(graphData.nodes.Select(d => d.nodeObject));
-            var toRemoveNodes = nodes.ToList().Where(e => !dataNodeObjects.Contains((e as ISerializableNode).nodeObject)).ToArray();
-            foreach (var data in toAddNodes)
+            var viewNodeGuids = nodes.ToList().ToDictionary(n => (n as ISerializableNode).guid, n => n as ISerializableNode);
+            var dataNodeGuids = new HashSet<string>(graphData.nodes.Select(d => d.guid));
+            var toRemoveNodes = nodes.ToList().Where(e => !dataNodeGuids.Contains((e as ISerializableNode).guid)).ToArray();
+            foreach (var data in graphData.nodes)
             {
-                var node = Activator.CreateInstance(Type.GetType(data.typeName), true) as Node;
-                var serializableNode = node as ISerializableNode;
-                EditorUtility.CopySerialized(data.nodeObject, serializableNode.nodeObject);
-                AddElement(node);
-                m_NodeObjectHolder.Add(serializableNode.nodeObject);
-                serializableNode.LoadSerializedFields();
+                if (!viewNodeGuids.ContainsKey(data.guid))
+                {
+                    var node = Activator.CreateInstance(Type.GetType(data.typeName), true) as Node;
+                    AddElement(node);
+                    var serializableNode = node as ISerializableNode;
+                    EditorJsonUtility.FromJsonOverwrite(data.serializedNodeObject, serializableNode.nodeObject);
+                    serializableNode.LoadSerializedFields();
+                }
+                else
+                {
+                    var serializableNode = viewNodeGuids[data.guid];
+                    EditorJsonUtility.FromJsonOverwrite(data.serializedNodeObject, serializableNode.nodeObject);
+                    serializableNode.LoadSerializedFields();
+                }
             }
             if (toRemoveNodes.Length > 0)
                 DeleteElements(toRemoveNodes);
@@ -275,24 +346,40 @@ namespace MomomaAssets
                     }
                 }
             });
-            var viewEdgeObjects = new HashSet<EdgeObject>(edges.ToList().Select(e => (e as TextureGraphEdge).edgeObject));
-            var toAddEdges = graphData.edges.Where(d => !viewEdgeObjects.Contains(d.edgeObject)).ToArray();
-            var dataEdgeObjects = new HashSet<EdgeObject>(graphData.edges.Select(d => d.edgeObject));
-            var toRemoveEdges = edges.ToList().Where(e => !dataEdgeObjects.Contains((e as TextureGraphEdge).edgeObject)).ToArray();
-            foreach (var data in toAddEdges)
+            var viewEdgeGuids = edges.ToList().ToDictionary(e => (e as TextureGraphEdge).guid, edges => edges as TextureGraphEdge);
+            var dataEdgeGuids = new HashSet<string>(graphData.edges.Select(d => d.guid));
+            var toRemoveEdges = edges.ToList().Where(e => !dataEdgeGuids.Contains((e as TextureGraphEdge).guid)).ToArray();
+            foreach (var data in graphData.edges)
             {
-                var edge = Activator.CreateInstance(Type.GetType(data.typeName), true) as TextureGraphEdge;
-                EditorUtility.CopySerialized(data.edgeObject, edge.edgeObject);
+                TextureGraphEdge edge;
+                var isNewEdge = !viewEdgeGuids.TryGetValue(data.guid, out edge);
+                if (isNewEdge)
+                {
+                    edge = Activator.CreateInstance(Type.GetType(data.typeName), true) as TextureGraphEdge;
+                }
+                EditorJsonUtility.FromJsonOverwrite(data.serializedEdgeObject, edge.edgeObject);
                 if (string.IsNullOrEmpty(edge.edgeObject.inputGuid) || string.IsNullOrEmpty(edge.edgeObject.outputGuid) || !ports.ContainsKey(edge.edgeObject.inputGuid) || !ports.ContainsKey(edge.edgeObject.outputGuid))
                     continue;
                 var inputPort = ports[edge.edgeObject.inputGuid];
                 var outputPort = ports[edge.edgeObject.outputGuid];
-                edge.input = inputPort;
-                edge.output = outputPort;
-                inputPort.Connect(edge);
-                outputPort.Connect(edge);
-                AddElement(edge);
-                MarkNordIsDirty();
+                if (edge.input != inputPort)
+                {
+                    edge.input?.Disconnect(edge);
+                    edge.input = inputPort;
+                    inputPort.Connect(edge);
+                }
+                if (edge.output != outputPort)
+                {
+                    edge.output?.Disconnect(edge);
+                    edge.output = outputPort;
+                    outputPort.Connect(edge);
+                }
+                if (isNewEdge)
+                {
+                    AddElement(edge);
+                    MarkNordIsDirty();
+                }
+                edge.LoadSerializedFields();
             }
             foreach (var edge in toRemoveEdges)
             {
@@ -300,7 +387,6 @@ namespace MomomaAssets
                 edge.output?.Disconnect(edge);
                 edge.input = null;
                 edge.output = null;
-                MarkNordIsDirty();
             }
             if (toRemoveEdges.Length > 0)
                 DeleteElements(toRemoveEdges);
@@ -317,31 +403,31 @@ namespace MomomaAssets
             return false;
         }
 
-        internal static T AssignTo<T>(object obj)
+        internal static T[] AssignTo<T>(IList obj)
         {
-            var fromType = obj.GetType();
+            var fromType = obj.GetType().GetElementType();
             var toType = typeof(T);
             if (toType.IsAssignableFrom(fromType))
-                return (T)obj;
+                return obj.Cast<T>().ToArray();
             if (toType == typeof(float))
             {
-                if (obj is Vector4 vector4)
-                    return (T)(object)vector4.x;
-                else if (obj is Vector3 vector3)
-                    return (T)(object)vector3.x;
-                else if (obj is Vector2 vector2)
-                    return (T)(object)vector2.x;
+                if (obj is Vector4[] vector4s)
+                    return vector4s.Select(v => v.x).ToArray() as T[];
+                else if (obj is Vector3[] vector3s)
+                    return vector3s.Select(v => v.x).ToArray() as T[];
+                else if (obj is Vector2[] vector2s)
+                    return vector2s.Select(v => v.x).ToArray() as T[];
             }
-            else if (obj is float f)
+            else if (obj is float[] floats)
             {
                 if (toType == typeof(Vector4))
-                    return (T)(object)new Vector4(f, f, f, f);
+                    return floats.Select(f => new Vector4(f, f, f, f)).ToArray() as T[];
                 else if (toType == typeof(Vector3))
-                    return (T)(object)new Vector3(f, f, f);
+                    return floats.Select(f => new Vector3(f, f, f)).ToArray() as T[];
                 else if (toType == typeof(Vector2))
-                    return (T)(object)new Vector2(f, f);
+                    return floats.Select(f => new Vector2(f, f)).ToArray() as T[];
             }
-            throw new InvalidCastException(fromType.Name + " can't cast " + toType.Name);
+            throw new InvalidCastException(string.Format("can't cast {0} to {1}", fromType.Name, toType.Name));
         }
 
         string OnSerializeGraphElements(IEnumerable<GraphElement> elements)
@@ -372,7 +458,6 @@ namespace MomomaAssets
                 {
                     EditorJsonUtility.FromJsonOverwrite(subs[1], serializableNode.nodeObject);
                     AddElementWithRecord(element);
-                    MarkNordIsDirty();
                     nodes[serializableNode.nodeObject.guid] = (node, serializableNode);
                     if (node is TokenNode token)
                     {
@@ -411,6 +496,7 @@ namespace MomomaAssets
                 inputPort.Connect(edge);
                 outputPort.Connect(edge);
                 AddElementWithRecord(edge);
+                edge.SaveSerializedFields();
             }
             var allRect = Rect.zero;
             foreach (var value in nodes.Values)
@@ -436,6 +522,18 @@ namespace MomomaAssets
             }
         }
 
+        internal void MarkNordIsDirty(ISerializableNode node)
+        {
+            UpdateNodeObject(node);
+            MarkNordIsDirty();
+        }
+
+        internal void MarkNordIsDirty(TextureGraphEdge edge)
+        {
+            UpdateEdgeObject(edge);
+            MarkNordIsDirty();
+        }
+
         internal void MarkNordIsDirty()
         {
             m_RecalculateScheduledItem.Resume();
@@ -457,11 +555,9 @@ namespace MomomaAssets
                 return;
             var path = @"Assets/NewTextureGraph.asset";
             AssetDatabase.GenerateUniqueAssetPath(path);
+            graphData.hideFlags &= ~HideFlags.DontSaveInEditor;
             AssetDatabase.CreateAsset(graphData, path);
-            foreach (var data in m_NodeObjectHolder)
-                AssetDatabase.AddObjectToAsset(data, graphData);
-            foreach (var data in m_EdgeObjectHolder)
-                AssetDatabase.AddObjectToAsset(data, graphData);
+            graphData.hideFlags |= HideFlags.DontSaveInEditor;
             AssetDatabase.ImportAsset(path);
             Selection.activeObject = graphData;
         }
@@ -480,7 +576,7 @@ namespace MomomaAssets
             }
             else
             {
-                Path.ChangeExtension(path, "png");
+                path = Path.ChangeExtension(path, "png");
             }
             path = AssetDatabase.GenerateUniqueAssetPath(path);
             File.WriteAllBytes(Path.GetDirectoryName(Application.dataPath) + '/' + path, bytes);
@@ -503,8 +599,10 @@ namespace MomomaAssets
     class TextureGraphEdge : Edge
     {
         public EdgeObject edgeObject { get; private set; }
+        public string guid => m_Guid.stringValue;
 
         protected readonly SerializedObject serializedObject;
+        protected readonly SerializedProperty m_Guid;
         protected readonly SerializedProperty m_InputGuid;
         protected readonly SerializedProperty m_OutputGuid;
 
@@ -517,9 +615,30 @@ namespace MomomaAssets
         {
             edgeObject = ScriptableObject.CreateInstance<EdgeObject>();
             serializedObject = new SerializedObject(edgeObject);
+            m_Guid = serializedObject.FindProperty("m_Guid");
             m_InputGuid = serializedObject.FindProperty("m_InputGuid");
             m_OutputGuid = serializedObject.FindProperty("m_OutputGuid");
+            m_Guid.stringValue = persistenceKey;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
             this.AddManipulator(new ContextualMenuManipulator(context => context.menu.AppendAction("Add Token", action => AddToken(action), action => DropdownMenu.MenuAction.StatusFlags.Normal)));
+        }
+
+        ~TextureGraphEdge()
+        {
+            UnityEngine.Object.DestroyImmediate(edgeObject);
+        }
+
+        public virtual void SaveSerializedFields()
+        {
+            serializedObject.Update();
+            m_Guid.stringValue = persistenceKey;
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        public virtual void LoadSerializedFields()
+        {
+            serializedObject.Update();
+            persistenceKey = m_Guid.stringValue;
         }
 
         void AddToken(DropdownMenu.MenuAction action)
@@ -549,7 +668,10 @@ namespace MomomaAssets
             {
                 if ((input != null && output != null))
                 {
-                    graph.MarkNordIsDirty();
+                    if (isConnected)
+                        graph.MarkNordIsDirty(this);
+                    else
+                        graph.MarkNordIsDirty();
                     isConnected = true;
                 }
                 else if (input == null && output == null && isConnected)

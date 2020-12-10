@@ -15,6 +15,7 @@ namespace MomomaAssets
 
     public interface ISerializableNode
     {
+        string guid { get; }
         NodeObject nodeObject { get; }
 
         void SaveSerializedFields();
@@ -26,7 +27,8 @@ namespace MomomaAssets
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
 
-        public NodeObject nodeObject { get; private set; }
+        public string guid => m_Guid.stringValue;
+        public NodeObject nodeObject { get; }
         protected readonly SerializedObject serializedObject;
 
         readonly SerializedProperty m_Guid;
@@ -62,6 +64,11 @@ namespace MomomaAssets
             scheduleItem.Until(() => !float.IsNaN(GetPosition().width));
         }
 
+        ~TextureGraphNode()
+        {
+            UnityEngine.Object.DestroyImmediate(nodeObject);
+        }
+
         public virtual void SaveSerializedFields()
         {
             serializedObject.Update();
@@ -75,9 +82,10 @@ namespace MomomaAssets
             for (var i = 0; i < newGuids.Count; ++i)
                 m_OutputPortGuids.GetArrayElementAtIndex(i).stringValue = newGuids[i];
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            graph.UpdateNodeObject(this, true);
         }
 
-        public virtual void LoadSerializedFields() 
+        public virtual void LoadSerializedFields()
         {
             serializedObject.Update();
             persistenceKey = m_Guid.stringValue;
@@ -87,13 +95,14 @@ namespace MomomaAssets
             var outputPorts = outputContainer.Query<Port>().ToList();
             for (var i = 0; i < m_OutputPortGuids.arraySize; ++i)
                 outputPorts[i].persistenceKey = m_OutputPortGuids.GetArrayElementAtIndex(i).stringValue;
-         }
+            SetPosition(m_Position.rectValue);
+        }
 
         public override void BuildContextualMenu(ContextualMenuPopulateEvent evt)
         {
             evt.menu.AppendAction("Remove from Scope",
-             (action) => this.GetContainingScope()?.RemoveElement(this),
-             (action) => this.GetContainingScope() == null ? DropdownMenu.MenuAction.StatusFlags.Hidden : DropdownMenu.MenuAction.StatusFlags.Normal);
+                (action) => this.GetContainingScope()?.RemoveElement(this),
+                (action) => this.GetContainingScope() == null ? DropdownMenu.MenuAction.StatusFlags.Hidden : DropdownMenu.MenuAction.StatusFlags.Normal);
             base.BuildContextualMenu(evt);
         }
 
@@ -124,6 +133,7 @@ namespace MomomaAssets
                 serializedObject.ApplyModifiedPropertiesWithoutUndo();
             else
                 serializedObject.ApplyModifiedProperties();
+            graph.UpdateNodeObject(this, withoutUndo);
         }
 
         internal virtual void Process() { }
@@ -169,12 +179,7 @@ namespace MomomaAssets
                 }
                 else
                 {
-                    var castedData = new List<T>();
-                    foreach (var i in (rawData as IEnumerable))
-                    {
-                        castedData.Add(TextureGraph.AssignTo<T>(i));
-                    }
-                    inputValue = castedData.ToArray();
+                    inputValue = TextureGraph.AssignTo<T>(rawData as IList);
                 }
             }
         }
@@ -188,6 +193,7 @@ namespace MomomaAssets
             ++m_InputPortGuids.arraySize;
             m_InputPortGuids.GetArrayElementAtIndex(m_InputPortGuids.arraySize - 1).stringValue = port.persistenceKey;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            graph?.UpdateNodeObject(this, true);
             return port;
         }
 
@@ -200,13 +206,18 @@ namespace MomomaAssets
             ++m_OutputPortGuids.arraySize;
             m_OutputPortGuids.GetArrayElementAtIndex(m_OutputPortGuids.arraySize - 1).stringValue = port.persistenceKey;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            graph?.UpdateNodeObject(this, true);
             return port;
         }
     }
 
     class SerializableTokenNode : TokenNode, ISerializableNode
     {
-        public NodeObject nodeObject { get; private set; }
+        TextureGraph m_Graph;
+        protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
+
+        public string guid => m_Guid.stringValue;
+        public NodeObject nodeObject { get; }
         protected readonly SerializedObject serializedObject;
 
         readonly SerializedProperty m_Guid;
@@ -247,6 +258,11 @@ namespace MomomaAssets
             scheduleItem.Until(() => !float.IsNaN(GetPosition().width));
         }
 
+        ~SerializableTokenNode()
+        {
+            UnityEngine.Object.DestroyImmediate(nodeObject);
+        }
+
         void SetPortType()
         {
             serializedObject.Update();
@@ -267,6 +283,7 @@ namespace MomomaAssets
             m_OutputPortGuids.arraySize = 1;
             m_OutputPortGuids.GetArrayElementAtIndex(0).stringValue = output.persistenceKey;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            graph.UpdateNodeObject(this, true);
         }
 
         public virtual void LoadSerializedFields()
@@ -297,6 +314,7 @@ namespace MomomaAssets
                 serializedObject.ApplyModifiedPropertiesWithoutUndo();
             else
                 serializedObject.ApplyModifiedProperties();
+            graph.UpdateNodeObject(this, withoutUndo);
         }
     }
 
@@ -319,8 +337,8 @@ namespace MomomaAssets
             objectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
             objectField[0].style.flexShrink = 1f;
             objectField[0][1].style.flexShrink = 1f;
-            objectField.OnValueChanged(OnValueChanged);
             objectField.BindProperty(objectReferenceValues.GetArrayElementAtIndex(0));
+            objectField.OnValueChanged(OnValueChanged);
             extensionContainer.Add(objectField);
             image = new Image { scaleMode = ScaleMode.ScaleToFit, style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f, marginRight = 3f, marginLeft = 3f } };
             extensionContainer.Add(image);
@@ -348,7 +366,7 @@ namespace MomomaAssets
         void OnValueChanged(ChangeEvent<UnityEngine.Object> e)
         {
             ReloadTexture();
-            graph.MarkNordIsDirty();
+            graph.MarkNordIsDirty(this);
         }
 
         void ReloadTexture()
@@ -384,8 +402,11 @@ namespace MomomaAssets
                 }
             }
             Graphics.Blit(srcTexture, renderTexture, material);
+            var oldRT = RenderTexture.active;
+            RenderTexture.active = renderTexture;
             newImage.ReadPixels(new Rect(0, 0, m_Width, m_Height), 0, 0, false);
             newImage.Apply();
+            RenderTexture.active = oldRT;
             RenderTexture.ReleaseTemporary(renderTexture);
             image.image = newImage;
         }
@@ -423,12 +444,12 @@ namespace MomomaAssets
             integerValues.GetArrayElementAtIndex(1).intValue = s_PopupValues[6];
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
             widthPopupField = new PopupField<int>(s_PopupValues, defaultValue: s_PopupValues[6]) { name = "Width" };
-            widthPopupField.OnValueChanged(OnWidthValueChanged);
             widthPopupField.BindProperty(integerValues.GetArrayElementAtIndex(0));
+            widthPopupField.OnValueChanged(OnWidthValueChanged);
             heightPopupField = new PopupField<int>(s_PopupValues, defaultValue: s_PopupValues[6]) { name = "Height" };
-            heightPopupField.OnValueChanged(OnHeightValueChanged);
             heightPopupField.SetEnabled(false);
             heightPopupField.BindProperty(integerValues.GetArrayElementAtIndex(1));
+            heightPopupField.OnValueChanged(OnHeightValueChanged);
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Width", widthPopupField));
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Height", heightPopupField));
             RefreshExpandedState();
@@ -437,12 +458,12 @@ namespace MomomaAssets
         void OnWidthValueChanged(ChangeEvent<int> e)
         {
             heightPopupField.value = e.newValue;
-            graph.MarkNordIsDirty();
+            graph.MarkNordIsDirty(this);
         }
 
         void OnHeightValueChanged(ChangeEvent<int> e)
         {
-            graph.MarkNordIsDirty();
+            graph.MarkNordIsDirty(this);
         }
 
         internal override void Process()
@@ -544,9 +565,9 @@ namespace MomomaAssets
             vector4Values.arraySize = 1;
             vector4Values.GetArrayElementAtIndex(0).vector4Value = Vector4.one;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
-            m_VectorField = new Vector4Field();
+            m_VectorField = new Vector4Field() { style = { flexWrap = Wrap.NoWrap } };
             m_VectorField.BindProperty(vector4Values.GetArrayElementAtIndex(0));
-            m_VectorField.OnValueChanged(e => graph.MarkNordIsDirty());
+            m_VectorField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_VectorField);
             RefreshExpandedState();
         }
@@ -568,7 +589,7 @@ namespace MomomaAssets
             Burn
         }
 
-        readonly EnumField m_EnumField;
+        readonly EnumPopupField<BlendMode> m_EnumField;
         readonly SliderWithFloatField m_Slider;
 
         BlendNode() : base()
@@ -583,11 +604,11 @@ namespace MomomaAssets
             integerValues.arraySize = 1;
             floatValues.arraySize = 1;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
-            m_EnumField = new EnumField(BlendMode.Normal);
+            m_EnumField = new EnumPopupField<BlendMode>(BlendMode.Normal);
             m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
-            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_EnumField);
-            m_Slider = new SliderWithFloatField(0f, 1f, 1f, null, value => graph.MarkNordIsDirty());
+            m_Slider = new SliderWithFloatField(0f, 1f, 1f, null, value => graph.MarkNordIsDirty(this));
             m_Slider.BindProperty(floatValues.GetArrayElementAtIndex(0));
             extensionContainer.Add(m_Slider);
             RefreshExpandedState();
@@ -601,7 +622,7 @@ namespace MomomaAssets
             var result = new Vector4[length];
             GetInput<Vector4>(ref valueA, "A");
             GetInput<Vector4>(ref valueB, "B");
-            switch (m_EnumField.value)
+            switch (m_EnumField.enumValue)
             {
                 case BlendMode.Normal:
                     result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a)).ToArray();
@@ -679,7 +700,7 @@ namespace MomomaAssets
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
             m_FloatField = new FloatField();
             m_FloatField.BindProperty(floatValues.GetArrayElementAtIndex(0));
-            m_FloatField.OnValueChanged(e => graph.MarkNordIsDirty());
+            m_FloatField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_FloatField);
             RefreshExpandedState();
         }
@@ -697,7 +718,7 @@ namespace MomomaAssets
             Reverse
         }
 
-        readonly EnumField m_EnumField;
+        readonly EnumPopupField<CalculateMode> m_EnumField;
 
         internal MathNode() : base()
         {
@@ -710,9 +731,9 @@ namespace MomomaAssets
             RefreshPorts();
             integerValues.arraySize = 1;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
-            m_EnumField = new EnumField(CalculateMode.Add);
+            m_EnumField = new EnumPopupField<CalculateMode>(CalculateMode.Add);
             m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
-            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
@@ -725,7 +746,7 @@ namespace MomomaAssets
             var result = new float[length];
             GetInput<float>(ref valueA, "A");
             GetInput<float>(ref valueB, "B");
-            switch (m_EnumField.value)
+            switch (m_EnumField.enumValue)
             {
                 case CalculateMode.Add:
                     result = valueA.Select((v, i) => v + valueB[i]).ToArray();
@@ -761,7 +782,7 @@ namespace MomomaAssets
             Height
         }
 
-        readonly EnumField m_EnumField;
+        readonly EnumPopupField<BumpMapType> m_EnumField;
 
         BumpMapNode() : base()
         {
@@ -771,9 +792,9 @@ namespace MomomaAssets
             RefreshPorts();
             integerValues.arraySize = 1;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
-            m_EnumField = new EnumField(BumpMapType.Normal);
+            m_EnumField = new EnumPopupField<BumpMapType>(BumpMapType.Normal);
             m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
-            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty());
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
@@ -786,17 +807,15 @@ namespace MomomaAssets
             var inputs = new Vector4[length];
             var outputs = new Vector4[length];
             GetInput<Vector4>(ref inputs);
-            switch (m_EnumField.value)
+            switch (m_EnumField.enumValue)
             {
                 case BumpMapType.Normal:
                     var heights = inputs.Select(v => ConvertToHeight(v).x).ToArray();
-                    outputs = heights.Select((h, i) => ConvertToNormal(h, heights[(i - width + length) % length], heights[(i + width) % length], heights[(i + 1) - (i % width == width - 1 ? width : 0)], heights[(i - 1) + (i % width == 0 ? width : 0)])).ToArray();
+                    outputs = heights.Select((h, i) => ConvertToNormal(heights[(i - width + length) % length], heights[(i + width) % length], heights[(i + 1) - (i % width == width - 1 ? width : 0)], heights[(i - 1) + (i % width == 0 ? width : 0)], width, height)).ToArray();
                     break;
                 case BumpMapType.Height:
                     outputs = inputs.Select(ConvertToHeight).ToArray();
                     break;
-                default:
-                    throw new ArgumentOutOfRangeException("invalid enum value (BumpMapType)");
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = outputs;
@@ -808,12 +827,12 @@ namespace MomomaAssets
             return new Vector4(height, height, height, 1f);
         }
 
-        Vector4 ConvertToNormal(float v, float u, float b, float r, float l)
+        Vector4 ConvertToNormal(float u, float b, float r, float l, float width, float height)
         {
-            var vertical = ((u - v) + (v - b)) * 0.5f;
-            var horizontal = ((r - v) + (v - l)) * 0.5f;
-            var normal = new Vector3(vertical, horizontal, 0.1f).normalized;
-            return new Vector4(normal.x * 0.5f + 0.5f, normal.y * 0.5f + 0.5f, normal.z * 0.5f + 0.5f, 1f);
+            var vertical = new Vector3(100f / width, 0, (b - u)).normalized;
+            var horizontal = new Vector3(0, 100f / height, (r - l)).normalized;
+            var normal = Vector3.Cross(vertical, horizontal).normalized;
+            return new Vector4(normal.y * 0.5f + 0.5f, normal.x * 0.5f + 0.5f, normal.z * 0.5f + 0.5f, 1f);
         }
     }
 

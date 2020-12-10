@@ -18,8 +18,12 @@ namespace MomomaAssets
             public string typeName => m_TypeName;
 
             [SerializeField]
-            NodeObject m_NodeObject = null;
-            public NodeObject nodeObject => m_NodeObject;
+            string m_Guid ="";
+            public string guid => m_Guid;
+
+            [SerializeField]
+            string m_SerializedNodeObject = "";
+            public string serializedNodeObject => m_SerializedNodeObject;
         }
 
         [Serializable]
@@ -30,8 +34,12 @@ namespace MomomaAssets
             public string typeName => m_TypeName;
 
             [SerializeField]
-            EdgeObject m_EdgeObject = null;
-            public EdgeObject edgeObject => m_EdgeObject;
+            string m_Guid ="";
+            public string guid => m_Guid;
+
+            [SerializeField]
+            string m_SerializedEdgeObject = "";
+            public String serializedEdgeObject => m_SerializedEdgeObject;
         }
 
         [SerializeField, HideInInspector]
@@ -53,7 +61,6 @@ namespace MomomaAssets
                 var window = TextureGraphWindow.ShowWindow();
                 var graph = window.GetRootVisualContainer().Q<TextureGraph>();
                 graph.graphData = target as TextureGraphData;
-                graph.FullReload();
             }
         }
     }

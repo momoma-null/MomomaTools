@@ -46,6 +46,11 @@ namespace MomomaAssets
         [SerializeField]
         List<Vector4> m_Vector4Values = new List<Vector4>();
         public Vector4[] vector4Values => m_Vector4Values.ToArray();
+
+        void Awake()
+        {
+            hideFlags = HideFlags.HideAndDontSave;
+        }
     }
 
 }
