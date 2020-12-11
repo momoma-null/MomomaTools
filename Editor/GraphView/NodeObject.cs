@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor.Experimental.UIElements.GraphView;
 
 namespace MomomaAssets
 {
@@ -46,6 +45,10 @@ namespace MomomaAssets
         [SerializeField]
         List<Vector4> m_Vector4Values = new List<Vector4>();
         public Vector4[] vector4Values => m_Vector4Values.ToArray();
+
+        [SerializeField]
+        List<AnimationCurve> m_AnimationCurveValues = new List<AnimationCurve>();
+        public AnimationCurve[] animationCurveValues => m_AnimationCurveValues.ToArray();
 
         void Awake()
         {

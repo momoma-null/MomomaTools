@@ -229,7 +229,7 @@ namespace MomomaAssets
                         if (s_IsDeveloperMode)
                         {
                             var editors = tracker.activeEditors;
-                            if (!Array.Exists(editors, e => !(e is ExtendedEditor)))
+                            if (Array.Exists(editors, e => (e is ExtendedEditor)))
                                 continue;
                             m_DoRebuild = true;
                             for (var i = 0; i < editors.Length; ++i)

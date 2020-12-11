@@ -22,7 +22,7 @@ namespace MomomaAssets
         void LoadSerializedFields();
     }
 
-    class TextureGraphNode : Node, ISerializableNode
+    abstract class TextureGraphNode : Node, ISerializableNode
     {
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
@@ -41,6 +41,7 @@ namespace MomomaAssets
         protected readonly SerializedProperty stringValues;
         protected readonly SerializedProperty objectReferenceValues;
         protected readonly SerializedProperty vector4Values;
+        protected readonly SerializedProperty animationCurveValues;
 
         protected TextureGraphNode() : base()
         {
@@ -58,6 +59,7 @@ namespace MomomaAssets
             stringValues = serializedObject.FindProperty("m_StringValues");
             objectReferenceValues = serializedObject.FindProperty("m_ObjectRederenceValues");
             vector4Values = serializedObject.FindProperty("m_Vector4Values");
+            animationCurveValues = serializedObject.FindProperty("m_AnimationCurveValues");
             m_Guid.stringValue = persistenceKey;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
             var scheduleItem = schedule.Execute(() => RecordPosition(true));
@@ -136,7 +138,7 @@ namespace MomomaAssets
             graph.UpdateNodeObject(this, withoutUndo);
         }
 
-        internal virtual void Process() { }
+        protected abstract void Process();
 
         bool IsProcessed()
         {
@@ -414,7 +416,7 @@ namespace MomomaAssets
         readonly static Material s_NormalmapMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewEncodedNormals.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
         readonly static Material s_TransparentMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewTransparent.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
 
-        internal override void Process()
+        protected override void Process()
         {
             if (m_Width != graph.width || m_Height != graph.height)
                 ReloadTexture();
@@ -466,7 +468,12 @@ namespace MomomaAssets
             graph.MarkNordIsDirty(this);
         }
 
-        internal override void Process()
+        public void StartProcess()
+        {
+            Process();
+        }
+
+        protected override void Process()
         {
             var length = graph.width * graph.height;
             m_Colors = new Color[length];
@@ -493,7 +500,7 @@ namespace MomomaAssets
             RefreshPorts();
         }
 
-        internal override void Process()
+        protected override void Process()
         {
             var length = graph.width * graph.height;
             var reds = new float[length];
@@ -537,7 +544,7 @@ namespace MomomaAssets
             RefreshPorts();
         }
 
-        internal override void Process()
+        protected override void Process()
         {
             var length = graph.width * graph.height;
             var reds = new float[length];
@@ -571,6 +578,12 @@ namespace MomomaAssets
             extensionContainer.Add(m_VectorField);
             RefreshExpandedState();
         }
+
+        protected override void Process()
+        {
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = Enumerable.Repeat(m_VectorField.value, graph.width * graph.height).ToArray();
+        }
     }
 
     class BlendNode : TextureGraphNode
@@ -603,6 +616,7 @@ namespace MomomaAssets
             RefreshPorts();
             integerValues.arraySize = 1;
             floatValues.arraySize = 1;
+            floatValues.GetArrayElementAtIndex(0).floatValue = 1f;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
             m_EnumField = new EnumPopupField<BlendMode>(BlendMode.Normal);
             m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
@@ -614,7 +628,7 @@ namespace MomomaAssets
             RefreshExpandedState();
         }
 
-        internal override void Process()
+        protected override void Process()
         {
             var length = graph.width * graph.height;
             var valueA = new Vector4[length];
@@ -704,6 +718,13 @@ namespace MomomaAssets
             extensionContainer.Add(m_FloatField);
             RefreshExpandedState();
         }
+
+        protected override void Process()
+        {
+            var v = m_FloatField.value;
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = Enumerable.Repeat(new Vector4(v, v, v, v), graph.width * graph.height).ToArray();
+        }
     }
 
     class MathNode : TextureGraphNode
@@ -738,7 +759,7 @@ namespace MomomaAssets
             RefreshExpandedState();
         }
 
-        internal override void Process()
+        protected override void Process()
         {
             var length = graph.width * graph.height;
             var valueA = new float[length];
@@ -787,7 +808,7 @@ namespace MomomaAssets
         BumpMapNode() : base()
         {
             title = "Bump Map";
-            var port = AddInputPort<Vector4>();
+            AddInputPort<Vector4>();
             AddOutputPort<Vector4>();
             RefreshPorts();
             integerValues.arraySize = 1;
@@ -799,7 +820,7 @@ namespace MomomaAssets
             RefreshExpandedState();
         }
 
-        internal override void Process()
+        protected override void Process()
         {
             var width = graph.width;
             var height = graph.height;
@@ -834,6 +855,59 @@ namespace MomomaAssets
             var normal = Vector3.Cross(vertical, horizontal).normalized;
             return new Vector4(normal.y * 0.5f + 0.5f, normal.x * 0.5f + 0.5f, normal.z * 0.5f + 0.5f, 1f);
         }
+    }
+
+    class ToneCurveNode : TextureGraphNode
+    {
+        readonly CurveField m_RCurveField;
+        readonly CurveField m_GCurveField;
+        readonly CurveField m_BCurveField;
+        readonly CurveField m_ACurveField;
+
+        ToneCurveNode() : base()
+        {
+            title = "Tone Curve";
+            AddInputPort<Vector4>("Color");
+            AddOutputPort<Vector4>("Color");
+            RefreshPorts();
+            animationCurveValues.arraySize = 4;
+            animationCurveValues.GetArrayElementAtIndex(0).animationCurveValue = AnimationCurve.Linear(0f, 0f, 1f, 1f);
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            m_RCurveField = new CurveField() { ranges = new Rect(0f, 0f, 1f, 1f) };
+            m_RCurveField.BindProperty(animationCurveValues.GetArrayElementAtIndex(0));
+            m_RCurveField.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            extensionContainer.Add(m_RCurveField);
+            m_GCurveField = new CurveField() { ranges = new Rect(0f, 0f, 1f, 1f) };
+            m_GCurveField.BindProperty(animationCurveValues.GetArrayElementAtIndex(1));
+            m_GCurveField.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            m_GCurveField.SetEnabled(false);
+            extensionContainer.Add(m_GCurveField);
+            m_BCurveField = new CurveField() { ranges = new Rect(0f, 0f, 1f, 1f) };
+            m_BCurveField.BindProperty(animationCurveValues.GetArrayElementAtIndex(2));
+            m_BCurveField.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            m_BCurveField.SetEnabled(false);
+            extensionContainer.Add(m_BCurveField);
+            m_ACurveField = new CurveField() { ranges = new Rect(0f, 0f, 1f, 1f) };
+            m_ACurveField.BindProperty(animationCurveValues.GetArrayElementAtIndex(3));
+            m_ACurveField.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            m_ACurveField.SetEnabled(false);
+            extensionContainer.Add(m_ACurveField);
+            m_RCurveField.OnValueChanged(e => m_GCurveField.value = e.newValue);
+            m_RCurveField.OnValueChanged(e => m_BCurveField.value = e.newValue);
+            m_RCurveField.OnValueChanged(e => m_ACurveField.value = e.newValue);
+            RefreshExpandedState();
+        }
+
+        protected override void Process()
+        {
+            var length = graph.width * graph.height;
+            var inputs = new Vector4[length];
+            GetInput<Vector4>(ref inputs);
+            var outputs = inputs.Select(v => new Vector4(m_RCurveField.value.Evaluate(v.x), m_GCurveField.value.Evaluate(v.y), m_BCurveField.value.Evaluate(v.z), m_ACurveField.value.Evaluate(v.w))).ToArray();
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = outputs;
+        }
+
     }
 
 }

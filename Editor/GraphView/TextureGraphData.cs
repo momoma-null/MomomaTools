@@ -39,7 +39,7 @@ namespace MomomaAssets
 
             [SerializeField]
             string m_SerializedEdgeObject = "";
-            public String serializedEdgeObject => m_SerializedEdgeObject;
+            public string serializedEdgeObject => m_SerializedEdgeObject;
         }
 
         [SerializeField, HideInInspector]

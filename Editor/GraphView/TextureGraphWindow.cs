@@ -539,6 +539,18 @@ namespace MomomaAssets
             m_RecalculateScheduledItem.Resume();
         }
 
+        internal void MarkNordIsDirtyDelayed(ISerializableNode node, long delayMs = 200)
+        {
+            UpdateNodeObject(node);
+            MarkNordIsDirtyDelayed(delayMs);
+        }
+
+        internal void MarkNordIsDirtyDelayed(long delayMs = 200)
+        {
+            m_RecalculateScheduledItem.Pause();
+            m_RecalculateScheduledItem.ExecuteLater(delayMs);
+        }
+
         void Recalculate()
         {
             m_RecalculateScheduledItem.Pause();
@@ -587,7 +599,7 @@ namespace MomomaAssets
         Texture2D ProcessAll()
         {
             processData.Clear();
-            exportTextureNode.Process();
+            exportTextureNode.StartProcess();
             var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
             texture.SetPixels(exportTextureNode.colors);
             texture.Apply();
