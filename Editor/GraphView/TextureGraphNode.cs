@@ -403,12 +403,13 @@ namespace MomomaAssets
                     renderTexture = RenderTexture.GetTemporary(m_Width, m_Height, 0, RenderTextureFormat.ARGB32);
                 }
             }
-            Graphics.Blit(srcTexture, renderTexture, material);
             var oldRT = RenderTexture.active;
             RenderTexture.active = renderTexture;
+            Graphics.Blit(srcTexture, renderTexture, material);
             newImage.ReadPixels(new Rect(0, 0, m_Width, m_Height), 0, 0, false);
             newImage.Apply();
             RenderTexture.active = oldRT;
+            renderTexture.Release();
             RenderTexture.ReleaseTemporary(renderTexture);
             image.image = newImage;
         }
@@ -622,8 +623,9 @@ namespace MomomaAssets
             m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
             m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty(this));
             extensionContainer.Add(m_EnumField);
-            m_Slider = new SliderWithFloatField(0f, 1f, 1f, null, value => graph.MarkNordIsDirty(this));
+            m_Slider = new SliderWithFloatField(0f, 1f, 1f);
             m_Slider.BindProperty(floatValues.GetArrayElementAtIndex(0));
+            m_Slider.OnValueChanged(f => graph.MarkNordIsDirtyDelayed(this));
             extensionContainer.Add(m_Slider);
             RefreshExpandedState();
         }
@@ -669,7 +671,7 @@ namespace MomomaAssets
                     result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => 1f - SafetyDivide(1f - b, a))).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("invalid enum value (BlendMode)");
+                    throw new ArgumentOutOfRangeException("BlendMode");
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = result;
@@ -788,7 +790,7 @@ namespace MomomaAssets
                     result = valueA.Select(v => 1f - v).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("invalid enum value (CalculateMode)");
+                    throw new ArgumentOutOfRangeException("CalculateMode");
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = result;
@@ -837,6 +839,8 @@ namespace MomomaAssets
                 case BumpMapType.Height:
                     outputs = inputs.Select(ConvertToHeight).ToArray();
                     break;
+                default:
+                    throw new ArgumentOutOfRangeException("BumpMapType");
             }
             var port = outputContainer.Q<Port>();
             graph.processData[port] = outputs;
@@ -907,7 +911,72 @@ namespace MomomaAssets
             var port = outputContainer.Q<Port>();
             graph.processData[port] = outputs;
         }
+    }
 
+    class RotateNode : TextureGraphNode
+    {
+        enum RotationType
+        {
+            Right90,
+            Left90,
+            Rotate180,
+            Horizontal,
+            Vertical
+        }
+
+        readonly EnumPopupField<RotationType> m_EnumField;
+
+        RotateNode() : base()
+        {
+            title = "Rotate";
+            AddInputPort<Vector4>();
+            AddOutputPort<Vector4>();
+            RefreshPorts();
+            integerValues.arraySize = 1;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            m_EnumField = new EnumPopupField<RotationType>(RotationType.Right90);
+            m_EnumField.BindProperty(integerValues.GetArrayElementAtIndex(0));
+            m_EnumField.OnValueChanged(e => graph.MarkNordIsDirty(this));
+            extensionContainer.Add(m_EnumField);
+            RefreshExpandedState();
+        }
+
+        protected override void Process()
+        {
+            var width = graph.width;
+            var height = graph.height;
+            var length = width * height;
+            var inputs = new Vector4[length];
+            var outputs = new Vector4[length];
+            GetInput<Vector4>(ref inputs);
+            var index = 0;
+            switch (m_EnumField.enumValue)
+            {
+                case RotationType.Right90:
+                    for (var j = 0; j < width; ++j)
+                        for (var i = width - 1 - j; i < length; i += width)
+                            outputs[index++] = inputs[i];
+                    break;
+                case RotationType.Left90:
+                    for (var j = 0; j < width; ++j)
+                        for (var i = width * (height - 1) + j; i >= 0; i -= width)
+                            outputs[index++] = inputs[i];
+                    break;
+                case RotationType.Rotate180:
+                    outputs = inputs.Reverse().ToArray();
+                    break;
+                case RotationType.Horizontal:
+                    outputs = inputs.Select((v, i) => inputs[i / width * 2 * width + width - 1 - i]).ToArray();
+                    break;
+                case RotationType.Vertical:
+                    outputs = inputs.Select((v, i) => inputs[i % width * 2 + width * (height - 1) - i]).ToArray();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException("RotationType");
+            }
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = outputs;
+        }
     }
 
 }

@@ -24,31 +24,50 @@ namespace MomomaAssets
         }
     }
 
-    class SliderWithFloatField : VisualElement
+    public class SliderWithFloatField : VisualElement, INotifyValueChanged<float>
     {
         readonly FloatField floatField;
         readonly Slider slider;
 
-        internal float value
+        public float value
         {
             get { return slider.value; }
             set { slider.value = value; }
         }
 
-        internal void BindProperty(SerializedProperty property)
+        public void OnValueChanged(EventCallback<ChangeEvent<float>> callback)
+        {
+            slider.OnValueChanged(callback);
+        }
+
+        public void RemoveOnValueChanged(EventCallback<ChangeEvent<float>> callback)
+        {
+            slider.RemoveOnValueChanged(callback);
+        }
+
+        public void SetValueAndNotify(float newValue)
+        {
+            value = newValue;
+        }
+
+        public void SetValueWithoutNotify(float newValue)
+        {
+            floatField.SetValueWithoutNotify(newValue);
+            slider.SetValueWithoutNotify(newValue);
+        }
+
+        public void BindProperty(SerializedProperty property)
         {
             floatField.BindProperty(property);
             slider.BindProperty(property);
         }
 
-        internal SliderWithFloatField(float start, float end, float initial, Action<float> valueChanged, Action<float> endValueChanged)
+        internal SliderWithFloatField(float start, float end, float initial)
         {
-            slider = new Slider(start, end, valueChanged) { style = { flexGrow = 1f } };
+            slider = new Slider(start, end) { style = { flexGrow = 1f } };
             floatField = new FloatField() { style = { flexGrow = 0.8f, flexShrink = 1f } };
             slider.OnValueChanged(e => floatField.value = e.newValue);
             floatField.OnValueChanged(e => slider.value = e.newValue);
-            slider.RegisterCallback<MouseUpEvent>(e => { if (e.button == 0) endValueChanged.Invoke(value); });
-            floatField.RegisterCallback<FocusOutEvent>(e => endValueChanged.Invoke(value));
             slider.value = initial;
             floatField.value = initial;
             style.flexDirection = FlexDirection.Row;

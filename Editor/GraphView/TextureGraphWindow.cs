@@ -607,7 +607,6 @@ namespace MomomaAssets
         }
     }
 
-    [Serializable]
     class TextureGraphEdge : Edge
     {
         public EdgeObject edgeObject { get; private set; }
