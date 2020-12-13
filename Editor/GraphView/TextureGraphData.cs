@@ -18,7 +18,7 @@ namespace MomomaAssets
             public string typeName => m_TypeName;
 
             [SerializeField]
-            string m_Guid ="";
+            string m_Guid = "";
             public string guid => m_Guid;
 
             [SerializeField]
@@ -27,19 +27,19 @@ namespace MomomaAssets
         }
 
         [Serializable]
-        public class EdgeObjectData
+        public class GraphElementData
         {
             [SerializeField]
             string m_TypeName = "";
             public string typeName => m_TypeName;
 
             [SerializeField]
-            string m_Guid ="";
+            string m_Guid = "";
             public string guid => m_Guid;
 
             [SerializeField]
-            string m_SerializedEdgeObject = "";
-            public string serializedEdgeObject => m_SerializedEdgeObject;
+            string m_SerializedElement = "";
+            public string serializedElement => m_SerializedElement;
         }
 
         [SerializeField, HideInInspector]
@@ -47,8 +47,8 @@ namespace MomomaAssets
         public NodeObjectData[] nodes => m_Nodes.ToArray();
 
         [SerializeField, HideInInspector]
-        List<EdgeObjectData> m_Edges = new List<EdgeObjectData>();
-        public EdgeObjectData[] edges => m_Edges.ToArray();
+        List<GraphElementData> m_GraphElements = new List<GraphElementData>();
+        public GraphElementData[] graphElements => m_GraphElements.ToArray();
     }
 
     [CustomEditor(typeof(TextureGraphData))]

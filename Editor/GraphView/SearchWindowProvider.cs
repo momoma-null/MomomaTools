@@ -21,7 +21,7 @@ namespace MomomaAssets
             var entries = new List<SearchTreeEntry>();
             entries.Add(new SearchTreeGroupEntry(new GUIContent("Create Node")));
             //entries.Add(new SearchTreeEntry(new GUIContent("Stack Node")) { level = 1, userData = typeof(StackNode) });
-            //entries.Add(new SearchTreeEntry(new GUIContent("Group")) { level = 1, userData = typeof(Group) });
+            entries.Add(new SearchTreeEntry(new GUIContent("Group")) { level = 1, userData = typeof(SerializableGroup) });
             entries.AddRange(this.GetType().Assembly.GetTypes().
             Where(type => !type.IsAbstract && type.IsSubclassOf(typeof(TextureGraphNode)) && type != typeof(ExportTextureNode)).
             Select(type => new SearchTreeEntry(new GUIContent(type.Name.ToSentence())) { level = 1, userData = type }));
@@ -31,13 +31,22 @@ namespace MomomaAssets
         public bool OnSelectEntry(SearchTreeEntry entry, SearchWindowContext context)
         {
             var type = entry.userData as Type;
-            var node = Activator.CreateInstance(type, true) as Node;
-            graphView.AddElementWithRecord(node);
-            var rect = new Rect();
-            var root = graphView.window.GetRootVisualContainer();
-            rect.position = graphView.contentViewContainer.WorldToLocal(root.ChangeCoordinatesTo(root.parent, context.screenMousePosition - graphView.window.position.position));
-            node.SetPosition(rect);
-            return true;
+            var newElement = Activator.CreateInstance(type, true);
+            if (newElement is Node node)
+            {
+                graphView.AddElementWithRecord(node);
+                var rect = new Rect();
+                var root = graphView.window.GetRootVisualContainer();
+                rect.position = graphView.contentViewContainer.WorldToLocal(root.ChangeCoordinatesTo(root.parent, context.screenMousePosition - graphView.window.position.position));
+                node.SetPosition(rect);
+                return true;
+            }
+            else if (newElement is ISerializableGraphElement serializableElement)
+            {
+                graphView.AddElementWithRecord(serializableElement as GraphElement);
+                return true;
+            }
+            return false;
         }
     }
 

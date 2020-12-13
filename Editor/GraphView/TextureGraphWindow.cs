@@ -38,7 +38,7 @@ namespace MomomaAssets
 
     class TextureGraph : GraphView
     {
-        internal readonly Dictionary<Port, object> processData = new Dictionary<Port, object>();
+        internal readonly Dictionary<Port, IList> processData = new Dictionary<Port, IList>();
         internal readonly TextureGraphWindow window;
 
         TextureGraphData m_GraphData;
@@ -61,6 +61,7 @@ namespace MomomaAssets
                 m_SerializedObject = new SerializedObject(m_GraphData);
                 m_Nodes = m_SerializedObject.FindProperty("m_Nodes");
                 m_Edges = m_SerializedObject.FindProperty("m_Edges");
+                m_GraphElements = m_SerializedObject.FindProperty("m_GraphElements");
                 FullReload();
             }
         }
@@ -83,9 +84,10 @@ namespace MomomaAssets
         }
         SerializedProperty m_Nodes;
         SerializedProperty m_Edges;
+        SerializedProperty m_GraphElements;
 
         ExportTextureNode m_ExportTextureNode;
-        internal ExportTextureNode exportTextureNode => m_ExportTextureNode ?? (m_ExportTextureNode = nodes.ToList().Find(n => n is ExportTextureNode) as ExportTextureNode);
+        ExportTextureNode exportTextureNode => m_ExportTextureNode ?? (m_ExportTextureNode = nodes.ToList().Find(n => n is ExportTextureNode) as ExportTextureNode);
 
         readonly PreviewWindow m_PreviewWindow;
         readonly IVisualElementScheduledItem m_RecalculateScheduledItem;
@@ -135,8 +137,11 @@ namespace MomomaAssets
         {
             graphData = ScriptableObject.CreateInstance<TextureGraphData>();
             graphData.hideFlags = HideFlags.DontSave;
-            m_ExportTextureNode = new ExportTextureNode();
-            AddElementWithRecord(m_ExportTextureNode, true);
+            if (exportTextureNode == null)
+            {
+                m_ExportTextureNode = new ExportTextureNode();
+                AddElementWithRecord(m_ExportTextureNode, true);
+            }
         }
 
         public override void OnPersistentDataReady()
@@ -147,7 +152,7 @@ namespace MomomaAssets
 
         protected override void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
         {
-            elements.Where(e => !(e is ExportTextureNode));
+            elements = elements.Where(e => !(e is ExportTextureNode));
             base.CollectCopyableGraphElements(elements, elementsToCopySet);
         }
 
@@ -200,13 +205,13 @@ namespace MomomaAssets
                 serializedObject.ApplyModifiedProperties();
         }
 
-        internal void UpdateEdgeObject(TextureGraphEdge edge, bool withoutUndo = false)
+        internal void UpdateSerializedData(ISerializableGraphElement element, bool withoutUndo = false)
         {
-            var index = Array.FindIndex(graphData.edges, d => d.guid == edge.guid);
+            var index = Array.FindIndex(graphData.graphElements, d => d.guid == element.guid);
             if (index < 0)
                 return;
             serializedObject.Update();
-            m_Edges.GetArrayElementAtIndex(index).FindPropertyRelative("m_SerializedEdgeObject").stringValue = EditorJsonUtility.ToJson(edge.edgeObject);
+            m_GraphElements.GetArrayElementAtIndex(index).FindPropertyRelative("m_SerializedElement").stringValue = EditorJsonUtility.ToJson(element);
             if (withoutUndo)
                 serializedObject.ApplyModifiedPropertiesWithoutUndo();
             else
@@ -232,16 +237,16 @@ namespace MomomaAssets
                 else
                     serializedObject.ApplyModifiedProperties();
             }
-            else if (element is TextureGraphEdge edge)
+            else if (element is ISerializableGraphElement serializableElement)
             {
-                if (Array.Exists(graphData.edges, data => data.guid == edge.guid))
+                if (Array.Exists(graphData.graphElements, data => data.guid == serializableElement.guid))
                     return;
                 serializedObject.Update();
-                ++m_Edges.arraySize;
-                var edgeData = m_Edges.GetArrayElementAtIndex(m_Edges.arraySize - 1);
-                edgeData.FindPropertyRelative("m_TypeName").stringValue = element.GetType().AssemblyQualifiedName;
-                edgeData.FindPropertyRelative("m_Guid").stringValue = edge.guid;
-                edgeData.FindPropertyRelative("m_SerializedEdgeObject").stringValue = EditorJsonUtility.ToJson(edge.edgeObject);
+                ++m_GraphElements.arraySize;
+                var elementData = m_GraphElements.GetArrayElementAtIndex(m_GraphElements.arraySize - 1);
+                elementData.FindPropertyRelative("m_TypeName").stringValue = element.GetType().AssemblyQualifiedName;
+                elementData.FindPropertyRelative("m_Guid").stringValue = serializableElement.guid;
+                elementData.FindPropertyRelative("m_SerializedElement").stringValue = EditorJsonUtility.ToJson(serializableElement);
                 if (withoutUndo)
                     serializedObject.ApplyModifiedPropertiesWithoutUndo();
                 else
@@ -278,13 +283,13 @@ namespace MomomaAssets
                             serializedObject.ApplyModifiedProperties();
                         }
                     }
-                    else if (element is TextureGraphEdge edge)
+                    else if (element is ISerializableGraphElement serializableGraphElement)
                     {
-                        var index = Array.FindIndex(graphData.edges, data => data.guid == edge.guid);
+                        var index = Array.FindIndex(graphData.graphElements, data => data.guid == serializableGraphElement.guid);
                         if (index >= 0)
                         {
                             serializedObject.Update();
-                            m_Edges.DeleteArrayElementAtIndex(index);
+                            m_GraphElements.DeleteArrayElementAtIndex(index);
                             serializedObject.ApplyModifiedProperties();
                         }
                     }
@@ -305,91 +310,40 @@ namespace MomomaAssets
             var toRemoveNodes = nodes.ToList().Where(e => !dataNodeGuids.Contains((e as ISerializableNode).guid)).ToArray();
             foreach (var data in graphData.nodes)
             {
-                if (!viewNodeGuids.ContainsKey(data.guid))
+                ISerializableNode serializableNode;
+                if (!viewNodeGuids.TryGetValue(data.guid, out serializableNode))
                 {
-                    var node = Activator.CreateInstance(Type.GetType(data.typeName), true) as Node;
-                    AddElement(node);
-                    var serializableNode = node as ISerializableNode;
-                    EditorJsonUtility.FromJsonOverwrite(data.serializedNodeObject, serializableNode.nodeObject);
-                    serializableNode.LoadSerializedFields();
+                    serializableNode = Activator.CreateInstance(Type.GetType(data.typeName), true) as ISerializableNode;
+                    AddElement(serializableNode as Node);
                 }
-                else
-                {
-                    var serializableNode = viewNodeGuids[data.guid];
-                    EditorJsonUtility.FromJsonOverwrite(data.serializedNodeObject, serializableNode.nodeObject);
-                    serializableNode.LoadSerializedFields();
-                }
+                EditorJsonUtility.FromJsonOverwrite(data.serializedNodeObject, serializableNode.nodeObject);
+                serializableNode.LoadSerializedFields(null);
             }
             if (toRemoveNodes.Length > 0)
                 DeleteElements(toRemoveNodes);
-            var ports = new Dictionary<string, Port>();
+            var ports = new Dictionary<string, GraphElement>();
             nodes.ForEach(node =>
             {
-                var serializableNode = node as ISerializableNode;
-                node.SetPosition(serializableNode.nodeObject.position);
-                if (node is TokenNode token)
-                {
-                    ports[serializableNode.nodeObject.inputPortGuids[0]] = token.input;
-                    ports[serializableNode.nodeObject.outputPortGuids[0]] = token.output;
-                }
-                else
-                {
-                    var iPorts = new Queue<Port>(node.inputContainer.Query<Port>().ToList());
-                    foreach (var guid in serializableNode.nodeObject.inputPortGuids)
-                    {
-                        ports[guid] = iPorts.Dequeue();
-                    }
-                    var oPorts = new Queue<Port>(node.outputContainer.Query<Port>().ToList());
-                    foreach (var guid in serializableNode.nodeObject.outputPortGuids)
-                    {
-                        ports[guid] = oPorts.Dequeue();
-                    }
-                }
+                if (node is ISerializableNode serializableNode)
+                    serializableNode.CollectPorts(ports);
             });
-            var viewEdgeGuids = edges.ToList().ToDictionary(e => (e as TextureGraphEdge).guid, edges => edges as TextureGraphEdge);
-            var dataEdgeGuids = new HashSet<string>(graphData.edges.Select(d => d.guid));
-            var toRemoveEdges = edges.ToList().Where(e => !dataEdgeGuids.Contains((e as TextureGraphEdge).guid)).ToArray();
-            foreach (var data in graphData.edges)
+            var serializableElements = graphElements.ToList().Where(e => !(e is ISerializableNode) && e is ISerializableGraphElement);
+            var viewElementGuids = serializableElements.ToDictionary(e => (e as ISerializableGraphElement).guid, e => e as ISerializableGraphElement);
+            var dataElementGuids = new HashSet<string>(graphData.graphElements.Select(d => d.guid));
+            var toRemoveElements = serializableElements.Where(e => !dataElementGuids.Contains((e as ISerializableGraphElement).guid)).ToArray();
+            foreach (var elementData in graphData.graphElements)
             {
-                TextureGraphEdge edge;
-                var isNewEdge = !viewEdgeGuids.TryGetValue(data.guid, out edge);
-                if (isNewEdge)
+                ISerializableGraphElement element;
+                if (!viewElementGuids.TryGetValue(elementData.guid, out element))
                 {
-                    edge = Activator.CreateInstance(Type.GetType(data.typeName), true) as TextureGraphEdge;
+                    element = Activator.CreateInstance(Type.GetType(elementData.typeName), true) as ISerializableGraphElement;
+                    AddElement(element as GraphElement);
                 }
-                EditorJsonUtility.FromJsonOverwrite(data.serializedEdgeObject, edge.edgeObject);
-                if (string.IsNullOrEmpty(edge.edgeObject.inputGuid) || string.IsNullOrEmpty(edge.edgeObject.outputGuid) || !ports.ContainsKey(edge.edgeObject.inputGuid) || !ports.ContainsKey(edge.edgeObject.outputGuid))
-                    continue;
-                var inputPort = ports[edge.edgeObject.inputGuid];
-                var outputPort = ports[edge.edgeObject.outputGuid];
-                if (edge.input != inputPort)
-                {
-                    edge.input?.Disconnect(edge);
-                    edge.input = inputPort;
-                    inputPort.Connect(edge);
-                }
-                if (edge.output != outputPort)
-                {
-                    edge.output?.Disconnect(edge);
-                    edge.output = outputPort;
-                    outputPort.Connect(edge);
-                }
-                if (isNewEdge)
-                {
-                    AddElement(edge);
-                    MarkNordIsDirty();
-                }
-                edge.LoadSerializedFields();
+                EditorJsonUtility.FromJsonOverwrite(elementData.serializedElement, element);
+                element.LoadSerializedFields(ports);
             }
-            foreach (var edge in toRemoveEdges)
-            {
-                edge.input?.Disconnect(edge);
-                edge.output?.Disconnect(edge);
-                edge.input = null;
-                edge.output = null;
-            }
-            if (toRemoveEdges.Length > 0)
-                DeleteElements(toRemoveEdges);
+            if (toRemoveElements.Length > 0)
+                DeleteElements(toRemoveElements);
         }
 
         static bool IsAssignableType(Type fromType, Type toType)
@@ -437,71 +391,45 @@ namespace MomomaAssets
             {
                 if (e is ISerializableNode serializableNode)
                     serializedElements.Add(e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson(serializableNode.nodeObject));
-                else if (e is TextureGraphEdge edge)
-                    serializedElements.Add(e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson(edge.edgeObject));
+                else if (e is ISerializableGraphElement serializableGraphElement)
+                    serializedElements.Add(e.GetType().AssemblyQualifiedName + '&' + EditorJsonUtility.ToJson(serializableGraphElement));
             }
             return string.Join("\n", serializedElements);
         }
 
         void OnUnserializeAndPaste(string operationName, string data)
         {
-            var nodes = new Dictionary<string, (Node, ISerializableNode)>();
-            var ports = new Dictionary<string, Port>();
-            var edges = new Queue<TextureGraphEdge>();
+            var nodes = new Queue<ISerializableNode>();
+            var elements = new Queue<ISerializableGraphElement>();
+            var guidsToReplace = new Dictionary<string, GraphElement>();
             foreach (var str in data.Split('\n'))
             {
                 var subs = str.Split(new char[] { '&' }, 2);
                 var element = Activator.CreateInstance(Type.GetType(subs[0]), true) as GraphElement;
                 if (element == null || element is ExportTextureNode)
                     continue;
-                if (element is Node node && element is ISerializableNode serializableNode)
+                if (element is ISerializableNode serializableNode)
                 {
                     EditorJsonUtility.FromJsonOverwrite(subs[1], serializableNode.nodeObject);
-                    AddElementWithRecord(element);
-                    nodes[serializableNode.nodeObject.guid] = (node, serializableNode);
-                    if (node is TokenNode token)
-                    {
-                        ports[serializableNode.nodeObject.inputPortGuids[0]] = token.input;
-                        ports[serializableNode.nodeObject.outputPortGuids[0]] = token.output;
-                    }
-                    else
-                    {
-                        var iPorts = new Queue<Port>(node.inputContainer.Query<Port>().ToList());
-                        foreach (var guid in serializableNode.nodeObject.inputPortGuids)
-                        {
-                            ports[guid] = iPorts.Dequeue();
-                        }
-                        var oPorts = new Queue<Port>(node.outputContainer.Query<Port>().ToList());
-                        foreach (var guid in serializableNode.nodeObject.outputPortGuids)
-                        {
-                            ports[guid] = oPorts.Dequeue();
-                        }
-                    }
-                    serializableNode.SaveSerializedFields();
+                    nodes.Enqueue(serializableNode);
+                    if (serializableNode.SaveSerializedFields(guidsToReplace))
+                        AddElementWithRecord(element);
                 }
-                else if (element is TextureGraphEdge edge)
+                else if (element is ISerializableGraphElement serializableElement)
                 {
-                    EditorJsonUtility.FromJsonOverwrite(subs[1], edge.edgeObject);
-                    edges.Enqueue(edge);
+                    EditorJsonUtility.FromJsonOverwrite(subs[1], serializableElement);
+                    elements.Enqueue(serializableElement);
                 }
             }
-            foreach (var edge in edges)
+            foreach (var element in elements)
             {
-                if (string.IsNullOrEmpty(edge.edgeObject.inputGuid) || string.IsNullOrEmpty(edge.edgeObject.outputGuid) || !ports.ContainsKey(edge.edgeObject.inputGuid) || !ports.ContainsKey(edge.edgeObject.outputGuid))
-                    continue;
-                var inputPort = ports[edge.edgeObject.inputGuid];
-                var outputPort = ports[edge.edgeObject.outputGuid];
-                edge.input = inputPort;
-                edge.output = outputPort;
-                inputPort.Connect(edge);
-                outputPort.Connect(edge);
-                AddElementWithRecord(edge);
-                edge.SaveSerializedFields();
+                if (element.SaveSerializedFields(guidsToReplace))
+                    AddElementWithRecord(element as GraphElement);
             }
             var allRect = Rect.zero;
-            foreach (var value in nodes.Values)
+            foreach (var value in nodes)
             {
-                var rect = value.Item2.nodeObject.position;
+                var rect = value.nodeObject.position;
                 if (allRect == Rect.zero)
                     allRect = rect;
                 else
@@ -514,11 +442,11 @@ namespace MomomaAssets
                 }
             }
             var offset = contentViewContainer.WorldToLocal(contentRect.center) - allRect.center;
-            foreach (var value in nodes.Values)
+            foreach (var value in nodes)
             {
-                var rect = value.Item2.nodeObject.position;
+                var rect = value.nodeObject.position;
                 rect.position += offset;
-                value.Item1.SetPosition(rect);
+                (value as Node).SetPosition(rect);
             }
         }
 
@@ -528,9 +456,9 @@ namespace MomomaAssets
             MarkNordIsDirty();
         }
 
-        internal void MarkNordIsDirty(TextureGraphEdge edge)
+        internal void MarkNordIsDirty(ISerializableGraphElement element)
         {
-            UpdateEdgeObject(edge);
+            UpdateSerializedData(element);
             MarkNordIsDirty();
         }
 
@@ -607,15 +535,25 @@ namespace MomomaAssets
         }
     }
 
-    class TextureGraphEdge : Edge
+    public interface ISerializableGraphElement
     {
-        public EdgeObject edgeObject { get; private set; }
-        public string guid => m_Guid.stringValue;
+        string guid { get; }
 
-        protected readonly SerializedObject serializedObject;
-        protected readonly SerializedProperty m_Guid;
-        protected readonly SerializedProperty m_InputGuid;
-        protected readonly SerializedProperty m_OutputGuid;
+        bool SaveSerializedFields(Dictionary<string, GraphElement> guidsToReplace);
+        void LoadSerializedFields(Dictionary<string, GraphElement> graphElementGuids);
+    }
+
+    [Serializable]
+    class TextureGraphEdge : Edge, ISerializableGraphElement
+    {
+        [SerializeField]
+        string m_Guid;
+        public string guid => m_Guid;
+
+        [SerializeField]
+        string m_InputGuid;
+        [SerializeField]
+        string m_OutputGuid;
 
         TextureGraph m_Graph;
         protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
@@ -624,32 +562,40 @@ namespace MomomaAssets
 
         public TextureGraphEdge() : base()
         {
-            edgeObject = ScriptableObject.CreateInstance<EdgeObject>();
-            serializedObject = new SerializedObject(edgeObject);
-            m_Guid = serializedObject.FindProperty("m_Guid");
-            m_InputGuid = serializedObject.FindProperty("m_InputGuid");
-            m_OutputGuid = serializedObject.FindProperty("m_OutputGuid");
-            m_Guid.stringValue = persistenceKey;
-            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            m_Guid = persistenceKey;
             this.AddManipulator(new ContextualMenuManipulator(context => context.menu.AppendAction("Add Token", action => AddToken(action), action => DropdownMenu.MenuAction.StatusFlags.Normal)));
         }
 
-        ~TextureGraphEdge()
+        public virtual bool SaveSerializedFields(Dictionary<string, GraphElement> guidsToReplace)
         {
-            UnityEngine.Object.DestroyImmediate(edgeObject);
+            GraphElement inputPort, outputPort;
+            if (!guidsToReplace.TryGetValue(m_InputGuid, out inputPort) || !guidsToReplace.TryGetValue(m_OutputGuid, out outputPort))
+                return false;
+            input = inputPort as Port;
+            output = outputPort as Port;
+            input.Connect(this);
+            output.Connect(this);
+            m_Guid = persistenceKey;
+            return true;
         }
 
-        public virtual void SaveSerializedFields()
+        public virtual void LoadSerializedFields(Dictionary<string, GraphElement> graphElementGuids)
         {
-            serializedObject.Update();
-            m_Guid.stringValue = persistenceKey;
-            serializedObject.ApplyModifiedProperties();
-        }
-
-        public virtual void LoadSerializedFields()
-        {
-            serializedObject.Update();
-            persistenceKey = m_Guid.stringValue;
+            var inputPort = graphElementGuids[m_InputGuid];
+            var outputPort = graphElementGuids[m_OutputGuid];
+            if (input != inputPort)
+            {
+                input?.Disconnect(this);
+                input = inputPort as Port;
+                input.Connect(this);
+            }
+            if (output != outputPort)
+            {
+                output?.Disconnect(this);
+                output = outputPort as Port;
+                output.Connect(this);
+            }
+            persistenceKey = guid;
         }
 
         void AddToken(DropdownMenu.MenuAction action)
@@ -671,12 +617,11 @@ namespace MomomaAssets
             base.OnPortChanged(isInput);
             if (isGhostEdge)
                 return;
-            serializedObject.Update();
-            m_InputGuid.stringValue = input?.persistenceKey;
-            m_OutputGuid.stringValue = output?.persistenceKey;
-            serializedObject.ApplyModifiedProperties();
+            m_InputGuid = input?.persistenceKey;
+            m_OutputGuid = output?.persistenceKey;
             if (graph != null)
             {
+                graph.UpdateSerializedData(this);
                 if ((input != null && output != null))
                 {
                     if (isConnected)
@@ -722,6 +667,86 @@ namespace MomomaAssets
             Add(m_Image);
             m_Image.StretchToParentSize();
             this.AddManipulator(new Dragger { clampToParentEdges = true });
+        }
+    }
+
+    [Serializable]
+    class SerializableGroup : Group, ISerializableGraphElement
+    {
+        TextureGraph m_Graph;
+        protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
+
+        [SerializeField]
+        string m_Guid;
+        public string guid => m_Guid;
+
+        [SerializeField]
+        string m_Title;
+        public override string title
+        {
+            get => base.title;
+            set
+            {
+                base.title = value;
+                if (m_Title != title)
+                {
+                    m_Title = title;
+                    graph?.UpdateSerializedData(this);
+                }
+            }
+        }
+
+        [SerializeField]
+        List<string> m_ContainedElements = new List<string>();
+
+        SerializableGroup() : base()
+        {
+            m_Guid = persistenceKey;
+            m_Title = title;
+        }
+
+        public virtual bool SaveSerializedFields(Dictionary<string, GraphElement> guidsToReplace)
+        {
+            m_Guid = persistenceKey;
+            m_Title = title;
+            if (m_ContainedElements.Count > 0)
+            {
+                var oldContainedElements = m_ContainedElements.ToArray();
+                m_ContainedElements = new List<string>();
+                AddElements(oldContainedElements.Select(e => guidsToReplace[e]));
+            }
+            return true;
+        }
+
+        public virtual void LoadSerializedFields(Dictionary<string, GraphElement> graphElementGuids)
+        {
+            persistenceKey = m_Guid;
+            title = m_Title;
+            var nodes = graph.nodes.ToList();
+            RemoveElements(nodes.Where(n => n is ISerializableNode node && !m_ContainedElements.Contains(node.guid) && ContainsElement(n)));
+            AddElements(nodes.Where(n => n is ISerializableNode node && m_ContainedElements.Contains(node.guid) && !ContainsElement(n)));
+        }
+
+        protected override void OnElementsAdded(IEnumerable<GraphElement> elements)
+        {
+            base.OnElementsAdded(elements);
+            foreach (var element in elements)
+            {
+                if (element is ISerializableNode node)
+                    m_ContainedElements.Add(node.guid);
+            }
+            graph?.UpdateSerializedData(this);
+        }
+
+        protected override void OnElementsRemoved(IEnumerable<GraphElement> elements)
+        {
+            base.OnElementsRemoved(elements);
+            foreach (var element in elements)
+            {
+                if (element is ISerializableNode node)
+                    m_ContainedElements.Remove(node.guid);
+            }
+            graph?.UpdateSerializedData(this);
         }
     }
 
