@@ -1028,6 +1028,8 @@ namespace MomomaAssets
             AddOutputPort<Vector4>();
             RefreshPorts();
             floatValues.arraySize = 3;
+            floatValues.GetArrayElementAtIndex(1).floatValue = 1f;
+            floatValues.GetArrayElementAtIndex(2).floatValue = 1f;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
             m_HueSlider = new SliderWithFloatField(-0.5f, 0.5f, 0);
             m_HueSlider.BindProperty(floatValues.GetArrayElementAtIndex(0));
