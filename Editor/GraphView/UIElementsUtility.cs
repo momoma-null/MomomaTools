@@ -62,7 +62,7 @@ namespace MomomaAssets
             slider.BindProperty(property);
         }
 
-        internal SliderWithFloatField(float start, float end, float initial)
+        public SliderWithFloatField(float start, float end, float initial)
         {
             slider = new Slider(start, end) { style = { flexGrow = 1f } };
             floatField = new FloatField() { style = { flexGrow = 0.8f, flexShrink = 1f } };

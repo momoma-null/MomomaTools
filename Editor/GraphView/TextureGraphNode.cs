@@ -12,6 +12,19 @@ using UnityEditor.Experimental.UIElements.GraphView;
 namespace MomomaAssets
 {
 
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    public class NodeMenuAttribute : Attribute
+    {
+        public string Path { get; }
+        public Type GraphViewType { get; }
+
+        public NodeMenuAttribute(string path, Type graphViewType = null)
+        {
+            this.Path = path;
+            this.GraphViewType = graphViewType;
+        }
+    }
+
     public interface ISerializableNode : ISerializableGraphElement
     {
         NodeObject nodeObject { get; }
@@ -342,6 +355,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Input/Texture", typeof(TextureGraph))]
     class ImportTextureNode : TextureGraphNode
     {
         readonly ObjectField objectField;
@@ -498,6 +512,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Decompose", typeof(TextureGraph))]
     class DecomposeChannelsNode : TextureGraphNode
     {
         DecomposeChannelsNode() : base()
@@ -542,6 +557,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Combine", typeof(TextureGraph))]
     class CombineChannelsNode : TextureGraphNode
     {
         CombineChannelsNode() : base()
@@ -575,6 +591,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Constant", typeof(TextureGraph))]
     class ConstantColor : TextureGraphNode
     {
         readonly Vector4Field m_VectorField;
@@ -601,6 +618,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Blend", typeof(TextureGraph))]
     class BlendNode : TextureGraphNode
     {
         enum BlendMode
@@ -716,6 +734,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Single/Constant", typeof(TextureGraph))]
     class ConstantFloat : TextureGraphNode
     {
         readonly FloatField m_FloatField;
@@ -743,6 +762,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Single/Math", typeof(TextureGraph))]
     class MathNode : TextureGraphNode
     {
         enum CalculateMode
@@ -807,6 +827,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Bump", typeof(TextureGraph))]
     class BumpMapNode : TextureGraphNode
     {
         enum BumpMapType
@@ -871,6 +892,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Color/Tone Curve", typeof(TextureGraph))]
     class ToneCurveNode : TextureGraphNode
     {
         readonly CurveField m_RCurveField;
@@ -924,6 +946,7 @@ namespace MomomaAssets
         }
     }
 
+    [NodeMenu("Transform/Rotate", typeof(TextureGraph))]
     class RotateNode : TextureGraphNode
     {
         enum RotationType
@@ -985,6 +1008,52 @@ namespace MomomaAssets
                 default:
                     throw new ArgumentOutOfRangeException("RotationType");
             }
+            var port = outputContainer.Q<Port>();
+            graph.processData[port] = outputs;
+        }
+    }
+
+    [NodeMenu("Color/HSV Shift", typeof(TextureGraph))]
+    class HSVShiftNode : TextureGraphNode
+    {
+        readonly SliderWithFloatField m_HueSlider;
+        readonly SliderWithFloatField m_SaturationSlider;
+        readonly SliderWithFloatField m_ValueSlider;
+
+        HSVShiftNode() : base()
+        {
+            title = "HSV Shift";
+            style.width = 150f;
+            AddInputPort<Vector4>();
+            AddOutputPort<Vector4>();
+            RefreshPorts();
+            floatValues.arraySize = 3;
+            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            m_HueSlider = new SliderWithFloatField(-0.5f, 0.5f, 0);
+            m_HueSlider.BindProperty(floatValues.GetArrayElementAtIndex(0));
+            m_HueSlider.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            extensionContainer.Add(UIElementsUtility.CreateLabeledElement("H", m_HueSlider));
+            m_SaturationSlider = new SliderWithFloatField(0f, 2f, 1f);
+            m_SaturationSlider.BindProperty(floatValues.GetArrayElementAtIndex(1));
+            m_SaturationSlider.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            extensionContainer.Add(UIElementsUtility.CreateLabeledElement("S", m_SaturationSlider));
+            m_ValueSlider = new SliderWithFloatField(0f, 2f, 1f);
+            m_ValueSlider.BindProperty(floatValues.GetArrayElementAtIndex(2));
+            m_ValueSlider.OnValueChanged(e => graph.MarkNordIsDirtyDelayed(this));
+            extensionContainer.Add(UIElementsUtility.CreateLabeledElement("V", m_ValueSlider));
+            RefreshExpandedState();
+        }
+
+        protected override void Process()
+        {
+            var inputs = new Vector4[graph.width * graph.height];
+            GetInput<Vector4>(ref inputs);
+            var outputs = inputs.Select(vector =>
+            {
+                Color.RGBToHSV(vector, out float h, out float s, out float v);
+                var c = Color.HSVToRGB((h + m_HueSlider.value + 1f) % 1, s * m_SaturationSlider.value, v * m_ValueSlider.value, true);
+                return new Vector4(c.r, c.g, c.b, vector.w);
+            }).ToArray();
             var port = outputContainer.Q<Port>();
             graph.processData[port] = outputs;
         }

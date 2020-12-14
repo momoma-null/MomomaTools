@@ -671,6 +671,7 @@ namespace MomomaAssets
     }
 
     [Serializable]
+    [NodeMenu("Group/Group", typeof(TextureGraph))]
     class SerializableGroup : Group, ISerializableGraphElement
     {
         TextureGraph m_Graph;
