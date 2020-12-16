@@ -353,36 +353,57 @@ namespace MomomaAssets
                 {
                     if (sp.hasChildren)
                     {
-                        sp.isExpanded = EditorGUILayout.Foldout(sp.isExpanded, sp.displayName, true);
-                        if (sp.isExpanded)
+                        using (var check = new EditorGUI.ChangeCheckScope())
                         {
-                            using (var child = sp.Copy())
-                            using (var end = child.GetEndProperty(true))
+                            var expanded = EditorGUILayout.Foldout(sp.isExpanded, sp.displayName, true);
+                            if (check.changed)
                             {
-                                if (child.Next(true))
+                                sp.isExpanded = expanded;
+                                if (Event.current.alt)
                                 {
-                                    using (new EditorGUI.IndentLevelScope(1))
-                                    using (new EditorGUI.DisabledScope(!sp.hasVisibleChildren))
+                                    using (var search = sp.Copy())
+                                    using (var end = search.GetEndProperty(true))
                                     {
-                                        if (sp.isArray)
+                                        while (search.Next(true) && !SerializedProperty.EqualContents(search, end))
                                         {
-                                            while(child.propertyType != SerializedPropertyType.ArraySize)
+                                            if (search.hasChildren)
                                             {
-                                                child.Next(true);
+                                                search.isExpanded = expanded;
                                             }
-                                            EditorGUILayout.PropertyField(child);
-                                            child.Next(false);
                                         }
-                                        var count = 0;
-                                        while (!SerializedProperty.EqualContents(child, end))
+                                    }
+                                }
+                            }
+                            if (expanded)
+                            {
+                                using (var child = sp.Copy())
+                                using (var end = child.GetEndProperty(true))
+                                {
+                                    if (child.Next(true))
+                                    {
+                                        using (new EditorGUI.IndentLevelScope(1))
+                                        using (new EditorGUI.DisabledScope(!sp.hasVisibleChildren))
                                         {
-                                            PropertyFieldRecursive(child);
-                                            if (!child.Next(false))
-                                                break;
-                                            if (++count > 100)
+                                            if (sp.isArray)
                                             {
-                                                EditorGUILayout.HelpBox("The 100th and subsequent elements are omitted.", MessageType.Info);
-                                                break;
+                                                while (child.propertyType != SerializedPropertyType.ArraySize)
+                                                {
+                                                    child.Next(true);
+                                                }
+                                                EditorGUILayout.PropertyField(child);
+                                                child.Next(false);
+                                            }
+                                            var count = 0;
+                                            while (!SerializedProperty.EqualContents(child, end))
+                                            {
+                                                PropertyFieldRecursive(child);
+                                                if (!child.Next(false))
+                                                    break;
+                                                if (++count > 100)
+                                                {
+                                                    EditorGUILayout.HelpBox("The 100th and subsequent elements are omitted.", MessageType.Info);
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
