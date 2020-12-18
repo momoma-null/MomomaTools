@@ -8,7 +8,8 @@ using MomomaAssets.Utility;
 namespace MomomaAssets
 {
 
-    [CustomEditor(typeof(Texture2DArray))]
+    //[CustomEditor(typeof(Texture2DArray))]
+    [Obsolete("Use Texture2DArrayImporter")]
     public class Texture2DArrayInspector : Editor
     {
         readonly static Type s_Texture2DArrayInspectorType = Type.GetType("UnityEditor.Texture2DArrayInspector, UnityEditor.dll");
@@ -20,10 +21,8 @@ namespace MomomaAssets
         int m_MipCount;
         TextureFormat m_Format;
         SerializedProperty m_ColorSpace;
-
         List<Texture2D> m_Texture2DList;
         ReorderableList m_ReorderableList;
-
         Editor m_TextureEditor;
         Editor m_PreviewTextureEditor;
 

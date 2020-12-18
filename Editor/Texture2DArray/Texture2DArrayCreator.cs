@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿/*
+using UnityEngine;
 using UnityEditor;
 
 namespace MomomaAssets
@@ -35,6 +36,8 @@ namespace MomomaAssets
             var select = Selection.activeObject;
             return (select is Texture2D) && AssetDatabase.Contains(select);
         }
+        
     }
 
 }// namespace MomomaAssets
+*/
