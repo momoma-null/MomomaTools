@@ -23,6 +23,10 @@ namespace MomomaAssets
         TextureWrapMode m_WrapModeW = 0;
         [SerializeField]
         int m_AnisoLevel = 1;
+        [SerializeField]
+        int m_LightmapFormat = 0;
+        [SerializeField]
+        int m_ColorSpace = 1;
 
         [MenuItem("Assets/Create/Texture 2D Array", false, 310)]
         static void CreateTexture2DArray()
@@ -38,7 +42,7 @@ namespace MomomaAssets
             {
                 var baseTex = srcTexture2Ds[0];
                 srcTexture2Ds.RemoveAll(tex => tex.width != baseTex.width || tex.height != baseTex.height || tex.mipmapCount != baseTex.mipmapCount || tex.format != baseTex.format);
-                var texture2DArray = new Texture2DArray(baseTex.width, baseTex.height, srcTexture2Ds.Count, baseTex.format, baseTex.mipmapCount > 1);
+                var texture2DArray = new Texture2DArray(baseTex.width, baseTex.height, srcTexture2Ds.Count, baseTex.format, baseTex.mipmapCount > 1, m_ColorSpace == 0);
                 for (var index = 0; index < srcTexture2Ds.Count; ++index)
                 {
                     Graphics.CopyTexture(srcTexture2Ds[index], 0, texture2DArray, index);
@@ -50,11 +54,9 @@ namespace MomomaAssets
                 texture2DArray.anisoLevel = m_AnisoLevel;
                 texture2DArray.Apply(false, true);
 
-                var srcImage = AssetPreview.GetMiniThumbnail(baseTex);
-                var thumbnail = new Texture2D(srcImage.width, srcImage.height, srcImage.format, srcImage.mipmapCount > 1);
-                Graphics.CopyTexture(srcImage, thumbnail);
-                thumbnail.Apply(false, true);
-
+                var baseTexEditor = Editor.CreateEditor(baseTex);
+                var thumbnail = baseTexEditor.RenderStaticPreview(AssetDatabase.GetAssetPath(baseTex), null, 64, 64);
+                DestroyImmediate(baseTexEditor);
                 ctx.AddObjectToAsset("Texture2DArray", texture2DArray, thumbnail);
                 ctx.SetMainObject(texture2DArray);
             }
@@ -76,11 +78,7 @@ namespace MomomaAssets
         public override bool showImportedObject => false;
 
         ReorderableList m_ReorderableList;
-        int m_Width;
-        int m_Height;
-        int m_MipmapCount;
-        TextureFormat m_Format;
-        bool initialized = false;
+        Texture2D m_InitialTexture;
         Editor m_TextureEditor;
         Editor m_Texture2DArrayInspector;
         Texture2D m_TempTexture;
@@ -89,6 +87,8 @@ namespace MomomaAssets
         SerializedProperty m_WrapModeV;
         SerializedProperty m_WrapModeW;
         SerializedProperty m_AnisoLevel;
+        SerializedProperty m_LightmapFormat;
+        SerializedProperty m_ColorSpace;
 
         public override void OnEnable()
         {
@@ -99,13 +99,15 @@ namespace MomomaAssets
             m_WrapModeV = serializedObject.FindProperty("m_WrapModeV");
             m_WrapModeW = serializedObject.FindProperty("m_WrapModeW");
             m_AnisoLevel = serializedObject.FindProperty("m_AnisoLevel");
+            m_LightmapFormat = serializedObject.FindProperty("m_LightmapFormat");
+            m_ColorSpace = serializedObject.FindProperty("m_ColorSpace");
             SyncTempTexture();
             m_ReorderableList = new ReorderableList(serializedObject, serializedObject.FindProperty("m_Texture2Ds"));
             m_ReorderableList.drawHeaderCallback += r => EditorGUI.LabelField(r, "Textures");
             m_ReorderableList.drawElementCallback += DrawElemnt;
             m_ReorderableList.onReorderCallbackWithDetails += OnChanged;
+            m_ReorderableList.elementHeight = 64;
             m_TextureEditor = Editor.CreateEditor(m_TempTexture, s_TextureInspectorType);
-            Init();
         }
 
         public override void OnDisable()
@@ -119,6 +121,7 @@ namespace MomomaAssets
 
         public override void OnInspectorGUI()
         {
+            Init();
             using (var check = new EditorGUI.ChangeCheckScope())
             {
                 m_TextureEditor.OnInspectorGUI();
@@ -156,16 +159,24 @@ namespace MomomaAssets
 
         void Init()
         {
-            if (initialized || m_ReorderableList.serializedProperty.arraySize == 0)
-                return;
-            var baseTex = m_ReorderableList.serializedProperty.GetArrayElementAtIndex(0).objectReferenceValue as Texture2D;
-            if (baseTex == null)
-                return;
-            m_Width = baseTex.width;
-            m_Height = baseTex.height;
-            m_MipmapCount = baseTex.mipmapCount;
-            m_Format = baseTex.format;
-            initialized = true;
+            m_InitialTexture = null;
+            for (var index = 0; index < m_ReorderableList.serializedProperty.arraySize; ++index)
+            {
+                var tex = m_ReorderableList.serializedProperty.GetArrayElementAtIndex(index).objectReferenceValue as Texture2D;
+                if (tex != null)
+                {
+                    m_InitialTexture = tex;
+                    break;
+                }
+            }
+            if (m_InitialTexture != null)
+            {
+                using (var texSO = new SerializedObject(m_InitialTexture))
+                {
+                    m_LightmapFormat.intValue = texSO.FindProperty("m_LightmapFormat").intValue;
+                    m_ColorSpace.intValue = texSO.FindProperty("m_ColorSpace").intValue;
+                }
+            }
         }
 
         void SyncTempTexture()
@@ -181,7 +192,20 @@ namespace MomomaAssets
 
         void DrawElemnt(Rect rect, int index, bool isActive, bool isFocused)
         {
-            EditorGUI.ObjectField(rect, m_ReorderableList.serializedProperty.GetArrayElementAtIndex(index));
+            var label = new GUIContent(string.Format("Element{0}", index));
+            var property = m_ReorderableList.serializedProperty.GetArrayElementAtIndex(index);
+            var tex = property.objectReferenceValue as Texture2D;
+            if (tex == null || m_InitialTexture == null || tex.width != m_InitialTexture.width || tex.height != m_InitialTexture.height || tex.format != m_InitialTexture.format || tex.mipmapCount != m_InitialTexture.mipmapCount)
+            {
+                var erroricon = EditorGUIUtility.IconContent("console.erroricon");
+                label.image = erroricon.image;
+            }
+            var r = rect;
+            r.width -= m_ReorderableList.elementHeight;
+            EditorGUI.LabelField(r, label);
+            r = rect;
+            r.xMin = r.xMax - m_ReorderableList.elementHeight;
+            EditorGUI.ObjectField(r, m_ReorderableList.serializedProperty.GetArrayElementAtIndex(index), typeof(Texture2D), GUIContent.none);
         }
 
         void OnChanged(ReorderableList list, int oldIndex, int newIndex)
