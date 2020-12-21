@@ -24,8 +24,6 @@ namespace MomomaAssets
         [SerializeField]
         int m_AnisoLevel = 1;
         [SerializeField]
-        int m_LightmapFormat = 0;
-        [SerializeField]
         int m_ColorSpace = 1;
 
         [MenuItem("Assets/Create/Texture 2D Array", false, 310)]
@@ -87,7 +85,6 @@ namespace MomomaAssets
         SerializedProperty m_WrapModeV;
         SerializedProperty m_WrapModeW;
         SerializedProperty m_AnisoLevel;
-        SerializedProperty m_LightmapFormat;
         SerializedProperty m_ColorSpace;
 
         public override void OnEnable()
@@ -99,7 +96,6 @@ namespace MomomaAssets
             m_WrapModeV = serializedObject.FindProperty("m_WrapModeV");
             m_WrapModeW = serializedObject.FindProperty("m_WrapModeW");
             m_AnisoLevel = serializedObject.FindProperty("m_AnisoLevel");
-            m_LightmapFormat = serializedObject.FindProperty("m_LightmapFormat");
             m_ColorSpace = serializedObject.FindProperty("m_ColorSpace");
             SyncTempTexture();
             m_ReorderableList = new ReorderableList(serializedObject, serializedObject.FindProperty("m_Texture2Ds"));
@@ -173,7 +169,6 @@ namespace MomomaAssets
             {
                 using (var texSO = new SerializedObject(m_InitialTexture))
                 {
-                    m_LightmapFormat.intValue = texSO.FindProperty("m_LightmapFormat").intValue;
                     m_ColorSpace.intValue = texSO.FindProperty("m_ColorSpace").intValue;
                 }
             }
