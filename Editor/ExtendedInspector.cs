@@ -301,7 +301,7 @@ namespace MomomaAssets
             foreach (DictionaryEntry entry in dictionary)
             {
                 var val = entry.Value as IList;
-                if (val == null || val.Count == 0)
+                if (val == null || val.Count == 0 || val[0] == null)
                     continue;
                 if (s_MonoEditorTypeInfos[1].GetValue(val[0]) as Type == typeof(ExtendedEditor))
                 {
