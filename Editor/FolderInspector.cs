@@ -19,7 +19,7 @@ namespace MomomaAssets
                 return;
             if (!AssetDatabase.IsValidFolder(path))
                 return;
-            path = Path.GetDirectoryName(Application.dataPath) + '/' + path + "/.memo";
+            path = path + "/.memo";
             if (m_Text == null)
             {
                 if (File.Exists(path))
