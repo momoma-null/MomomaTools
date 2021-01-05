@@ -1,7 +1,11 @@
 {
     "name": "com.momoma.momoma-tools",
     "displayName": "Momoma Tools",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "unity": "2018.4",
-    "description": "A set of useful editor extensions."
+    "description": "A set of useful editor extensions.",
+    "repository": {
+      "url": "https://github.com/momoma-null/MomomaTools.git",
+      "type": "git"
+    }
 }
