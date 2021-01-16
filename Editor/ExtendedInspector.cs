@@ -20,7 +20,6 @@ namespace MomomaAssets
         static readonly IDictionary s_kSCustomMultiEditors = s_CustomEditorAttributesType.GetField("kSCustomMultiEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
         static readonly Type s_MonoEditorTypeType = s_CustomEditorAttributesType.GetNestedType("MonoEditorType", BindingFlags.NonPublic);
         static readonly FieldInfo[] s_MonoEditorTypeInfos = s_MonoEditorTypeType.GetFields();
-        static readonly MethodInfo s_MemberwiseCloneInfo = typeof(object).GetMethod("MemberwiseClone", BindingFlags.NonPublic | BindingFlags.Instance);
         static readonly Dictionary<string, MethodInfo> s_MethodInfos = new Dictionary<string, MethodInfo>();
 
         static GUIContent s_PrevArrow;
@@ -256,43 +255,14 @@ namespace MomomaAssets
 
         static void ReplaceEditor(Type targetType, IDictionary dictionary)
         {
-            if (dictionary.Contains(targetType))
+            if (!dictionary.Contains(targetType))
             {
-                var monoEditorTypes = dictionary[targetType] as IList;
-                var extendedEditorIndex = -1;
-                for (var j = 0; j < monoEditorTypes.Count; ++j)
-                {
-                    if (s_MonoEditorTypeInfos[1].GetValue(monoEditorTypes[j]) as Type == typeof(ExtendedEditor))
-                    {
-                        extendedEditorIndex = j;
-                        break;
-                    }
-                }
-                if (extendedEditorIndex < 0)
-                {
-                    var newMonoEditorType = s_MemberwiseCloneInfo.Invoke(monoEditorTypes[0], new object[] { });
-                    s_MonoEditorTypeInfos[1].SetValue(newMonoEditorType, typeof(ExtendedEditor));
-                    monoEditorTypes.Insert(0, newMonoEditorType);
-                }
-                else if (extendedEditorIndex > 0)
-                {
-                    var extended = monoEditorTypes[extendedEditorIndex];
-                    monoEditorTypes.RemoveAt(extendedEditorIndex);
-                    monoEditorTypes.Insert(0, extended);
-                }
+                dictionary[targetType] = Activator.CreateInstance(typeof(List<>).MakeGenericType(s_MonoEditorTypeType));
             }
-            else
-            {
-                var enumerator = dictionary.GetEnumerator();
-                enumerator.MoveNext();
-                var sampleList = enumerator.Value as IList;
-                var newList = s_MemberwiseCloneInfo.Invoke(sampleList, new object[] { }) as IList;
-                newList.Clear();
-                newList.Add(Activator.CreateInstance(s_MonoEditorTypeType));
-                s_MonoEditorTypeInfos[0].SetValue(newList[0], targetType);
-                s_MonoEditorTypeInfos[1].SetValue(newList[0], typeof(ExtendedEditor));
-                dictionary[targetType] = newList;
-            }
+            var monoEditorTypes = dictionary[targetType] as IList;
+            monoEditorTypes.Insert(0, Activator.CreateInstance(s_MonoEditorTypeType));
+            s_MonoEditorTypeInfos[0].SetValue(monoEditorTypes[0], targetType);
+            s_MonoEditorTypeInfos[1].SetValue(monoEditorTypes[0], typeof(ExtendedEditor));
         }
 
         static void ResetEditor(IDictionary dictionary)
