@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEditor;
+using UnityEditor.Animations;
 using System.Collections.Generic;
 
 namespace MomomaAssets
@@ -10,35 +11,42 @@ namespace MomomaAssets
         [MenuItem("MomomaTools/RemoveUnusedAnimatorAssets")]
         static void Remove()
         {
-            var ctrls = Resources.FindObjectsOfTypeAll<RuntimeAnimatorController>();
+            var ctrls = Resources.FindObjectsOfTypeAll<AnimatorController>();
             try
             {
                 AssetDatabase.StartAssetEditing();
-                foreach (var ctrl in ctrls)
+                while (true)
                 {
-                    var subAssets = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(ctrl));
-                    var objHash = new HashSet<UnityEngine.Object>(subAssets);
-                    foreach (var subAsset in subAssets)
+                    var isRemoved = false;
+                    foreach (var ctrl in ctrls)
                     {
-                        if (subAsset == null)
-                            continue;
-                        using (var so = new SerializedObject(subAsset))
+                        var subAssets = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(ctrl));
+                        var objHash = new HashSet<UnityEngine.Object>(subAssets);
+                        foreach (var subAsset in subAssets)
                         {
-                            var sp = so.GetIterator();
-                            while (sp.Next(true))
+                            if (subAsset == null)
+                                continue;
+                            using (var so = new SerializedObject(subAsset))
+                            using (var sp = so.GetIterator())
                             {
-                                if (sp.propertyType == SerializedPropertyType.ObjectReference && sp.objectReferenceValue != null)
-                                    objHash.Remove(sp.objectReferenceValue);
+                                while (sp.Next(true))
+                                {
+                                    if (sp.propertyType == SerializedPropertyType.ObjectReference && sp.objectReferenceValue != null)
+                                        objHash.Remove(sp.objectReferenceValue);
+                                }
                             }
                         }
+                        foreach (var obj in objHash)
+                        {
+                            if (obj == null)
+                                continue;
+                            AssetDatabase.RemoveObjectFromAsset(obj);
+                            isRemoved = true;
+                            Debug.Log("Remove : " + obj.ToString());
+                        }
                     }
-                    foreach (var obj in objHash)
-                    {
-                        if (obj == null)
-                            continue;
-                        AssetDatabase.RemoveObjectFromAsset(obj);
-                        Debug.Log("Remove : " + obj.ToString());
-                    }
+                    if (!isRemoved)
+                        break;
                 }
             }
             catch
