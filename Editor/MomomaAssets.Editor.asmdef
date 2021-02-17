@@ -1,5 +1,5 @@
 {
-    "name": "MomomaAssetsEditor",
+    "name": "MomomaAssets.Editor",
     "references": [
         "MomomaAssets"
     ],

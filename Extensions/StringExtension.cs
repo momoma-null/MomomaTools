@@ -1,10 +1,8 @@
-﻿#if UNITY_EDITOR
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 
-namespace MomomaAssets.Utility
+namespace MomomaAssets.Extensions
 {
-
     public static class StringExtension
     {
         public static string ToSentence(this string input)
@@ -49,6 +47,4 @@ namespace MomomaAssets.Utility
                 str.Enqueue(' ');
         }
     }
-
 }
-#endif

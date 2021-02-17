@@ -2,9 +2,6 @@
 using System.Reflection;
 using UnityEngine;
 using UnityEditor;
-using UnityEditorInternal;
-using System.Collections.Generic;
-using MomomaAssets.Utility;
 
 namespace MomomaAssets
 {
