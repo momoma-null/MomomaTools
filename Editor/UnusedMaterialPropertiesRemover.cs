@@ -1,11 +1,11 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
 namespace MomomaAssets
 {
-
     public class UnusedMaterialPropertiesRemover : Editor
     {
         static readonly Dictionary<Shader, HashSet<string>> s_ShaderVariants = new Dictionary<Shader, HashSet<string>>();
@@ -13,9 +13,10 @@ namespace MomomaAssets
         [MenuItem("MomomaTools/RemoveUnusedProperties")]
         static void Remove()
         {
-            var mats = Resources.FindObjectsOfTypeAll<Material>();
-            foreach (var mat in mats)
+            var allMaterialPaths = AssetDatabase.GetAllAssetPaths().Where(path => path.StartsWith("Assets/") && path.EndsWith(".mat"));
+            foreach (var path in allMaterialPaths)
             {
+                var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
                 using (var so = new SerializedObject(mat))
                 {
                     so.Update();
@@ -121,5 +122,4 @@ namespace MomomaAssets
             }
         }
     }
-
 }// namespace MomomaAssets

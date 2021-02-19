@@ -1,26 +1,26 @@
-﻿using UnityEngine;
+﻿using System.Linq;
+using System.Collections.Generic;
+using UnityEngine;
 using UnityEditor;
 using UnityEditor.Animations;
-using System.Collections.Generic;
 
 namespace MomomaAssets
 {
-
     public class UnusedAnimatorAssetsRemover : Editor
     {
         [MenuItem("MomomaTools/RemoveUnusedAnimatorAssets")]
         static void Remove()
         {
-            var ctrls = Resources.FindObjectsOfTypeAll<AnimatorController>();
+            var allControllerPaths = AssetDatabase.GetAllAssetPaths().Where(path => path.StartsWith("Assets/") && path.EndsWith(".controller"));
             try
             {
                 AssetDatabase.StartAssetEditing();
                 while (true)
                 {
                     var isRemoved = false;
-                    foreach (var ctrl in ctrls)
+                    foreach (var path in allControllerPaths)
                     {
-                        var subAssets = AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(ctrl));
+                        var subAssets = AssetDatabase.LoadAllAssetsAtPath(path);
                         var objHash = new HashSet<UnityEngine.Object>(subAssets);
                         foreach (var subAsset in subAssets)
                         {
@@ -42,7 +42,7 @@ namespace MomomaAssets
                                 continue;
                             AssetDatabase.RemoveObjectFromAsset(obj);
                             isRemoved = true;
-                            Debug.Log("Remove : " + obj.ToString());
+                            Debug.Log($"Remove : {obj}");
                         }
                     }
                     if (!isRemoved)
@@ -56,8 +56,8 @@ namespace MomomaAssets
             finally
             {
                 AssetDatabase.StopAssetEditing();
+                AssetDatabase.SaveAssets();
             }
         }
     }
-
-}// namespace MomomaAssets
+}// namespace
