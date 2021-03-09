@@ -139,10 +139,7 @@ namespace MomomaAssets
                     return m_Items;
                 m_Items.AddRange(GetItems());
             }
-            IEnumerable<TreeViewItem> tempItems = m_Items;
-            if (hasSearch)
-                tempItems = m_Items.Where(item => DoesItemMatchSearch(item, searchString));
-            var rows = tempItems.ToList();
+            var rows = hasSearch ? m_Items.FindAll(item => DoesItemMatchSearch(item, searchString)) : new List<TreeViewItem>(m_Items);
             Sort(rows);
             Repaint();
             return rows;
