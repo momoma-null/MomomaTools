@@ -1,21 +1,22 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Experimental.UIElements;
 using UnityEngine.Experimental.UIElements.StyleEnums;
 using UnityEditor;
 using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
+using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
 {
 
     sealed class TextureGraphWindow : EditorWindow
     {
-        Graph<TextureGraph, TextureGraphEdge> m_SerializedGraphView;
+        NodeGraph<TextureGraph, TextureGraphEdge> m_NodeGraph;
 
         [MenuItem("MomomaTools/TextureGraph", false, 150)]
         public static TextureGraphWindow ShowWindow()
@@ -25,28 +26,25 @@ namespace MomomaAssets
 
         void OnEnable()
         {
-            m_SerializedGraphView = new Graph<TextureGraph, TextureGraphEdge>(this);
+            m_NodeGraph = new NodeGraph<TextureGraph, TextureGraphEdge>(this);
         }
 
         void OnDisable()
         {
-            m_SerializedGraphView?.Dispose();
-            m_SerializedGraphView = null;
+            m_NodeGraph?.Dispose();
+            m_NodeGraph = null;
         }
     }
 
     sealed class TextureGraph : GraphView, IGraphViewCallback, IDisposable
     {
-        internal readonly Dictionary<Port, IList> processData = new Dictionary<Port, IList>();
-
-        ExportTextureNode m_ExportTextureNode;
-        ExportTextureNode exportTextureNode => m_ExportTextureNode ?? (m_ExportTextureNode = nodes.ToList().Find(n => n is ExportTextureNode) as ExportTextureNode);
-
         readonly PreviewWindow m_PreviewWindow;
         readonly IVisualElementScheduledItem m_RecalculateScheduledItem;
 
-        internal int width => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
-        internal int height => isProduction ? exportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value : 128;
+        ExportTextureNode m_ExportTextureNode;
+
+        internal int width => isProduction ? m_ExportTextureNode.extensionContainer.Q<PopupField<int>>("Width").value : 128;
+        internal int height => isProduction ? m_ExportTextureNode.extensionContainer.Q<PopupField<int>>("Height").value : 128;
 
         bool isProduction = false;
 
@@ -82,7 +80,7 @@ namespace MomomaAssets
         public void Dispose()
         {
             if (m_PreviewWindow.image != null)
-                UnityEngine.Object.DestroyImmediate(m_PreviewWindow.image);
+                UnityObject.DestroyImmediate(m_PreviewWindow.image);
         }
 
         protected override void CollectCopyableGraphElements(IEnumerable<GraphElement> elements, HashSet<GraphElement> elementsToCopySet)
@@ -91,21 +89,21 @@ namespace MomomaAssets
             base.CollectCopyableGraphElements(elements, elementsToCopySet);
         }
 
-        public override List<Port> GetCompatiblePorts(Port startAnchor, NodeAdapter nodeAdapter)
+        public override List<Port> GetCompatiblePorts(Port startPort, NodeAdapter nodeAdapter)
         {
             var compatiblePorts = new List<Port>();
             var relativePorts = new HashSet<Port>();
-            var isInput = startAnchor.direction == Direction.Input;
-            var container = isInput ? startAnchor.node.outputContainer : startAnchor.node.inputContainer;
+            var isInput = startPort.direction == Direction.Input;
+            var container = isInput ? startPort.node.outputContainer : startPort.node.inputContainer;
             foreach (Port port in container)
             {
                 FindPortRecursively(port, relativePorts);
             }
             foreach (var port in ports.ToList())
             {
-                if (startAnchor.node == port.node
-                 || startAnchor.direction == port.direction
-                 || !(isInput ? IsAssignableType(port.portType, startAnchor.portType) : IsAssignableType(startAnchor.portType, port.portType))
+                if (startPort.node == port.node
+                 || startPort.direction == port.direction
+                 || !(isInput ? IsAssignableType(port.portType, startPort.portType, nodeAdapter) : IsAssignableType(startPort.portType, port.portType, nodeAdapter))
                  || relativePorts.Contains(port))
                     continue;
                 compatiblePorts.Add(port);
@@ -127,42 +125,15 @@ namespace MomomaAssets
             }
         }
 
-        static bool IsAssignableType(Type fromType, Type toType)
-        {
-            if (toType.IsAssignableFrom(fromType))
-                return true;
-            if (toType == typeof(float) && (fromType == typeof(Vector4) || fromType == typeof(Vector3) || fromType == typeof(Vector2)))
-                return true;
-            if (fromType == typeof(float) && (toType == typeof(Vector4) || toType == typeof(Vector3) || toType == typeof(Vector2)))
-                return true;
-            return false;
-        }
+        [TypeAdapter]
+        public static Vector4 AdaptType(float from) => new Vector4(from, from, from, from);
 
-        internal static T[] AssignTo<T>(IList obj)
+        [TypeAdapter]
+        public static float AdaptType(Vector4 from) => from.x;
+
+        static bool IsAssignableType(Type fromType, Type toType, NodeAdapter nodeAdapter)
         {
-            var fromType = obj.GetType().GetElementType();
-            var toType = typeof(T);
-            if (toType.IsAssignableFrom(fromType))
-                return obj.Cast<T>().ToArray();
-            if (toType == typeof(float))
-            {
-                if (obj is Vector4[] vector4s)
-                    return vector4s.Select(v => v.x).ToArray() as T[];
-                else if (obj is Vector3[] vector3s)
-                    return vector3s.Select(v => v.x).ToArray() as T[];
-                else if (obj is Vector2[] vector2s)
-                    return vector2s.Select(v => v.x).ToArray() as T[];
-            }
-            else if (obj is float[] floats)
-            {
-                if (toType == typeof(Vector4))
-                    return floats.Select(f => new Vector4(f, f, f, f)).ToArray() as T[];
-                else if (toType == typeof(Vector3))
-                    return floats.Select(f => new Vector3(f, f, f)).ToArray() as T[];
-                else if (toType == typeof(Vector2))
-                    return floats.Select(f => new Vector2(f, f)).ToArray() as T[];
-            }
-            throw new InvalidCastException(string.Format("can't cast {0} to {1}", fromType.Name, toType.Name));
+            return toType.IsAssignableFrom(fromType) || nodeAdapter.GetTypeAdapter(fromType, toType) != null;
         }
 
         void Recalculate()
@@ -170,9 +141,8 @@ namespace MomomaAssets
             m_RecalculateScheduledItem.Pause();
             var texture = ProcessAll();
             if (m_PreviewWindow.image != null)
-                UnityEngine.Object.DestroyImmediate(m_PreviewWindow.image);
+                UnityObject.DestroyImmediate(m_PreviewWindow.image);
             m_PreviewWindow.image = texture;
-            Debug.Log("Recalculate");
         }
 
         void SaveTexture()
@@ -181,23 +151,39 @@ namespace MomomaAssets
             var texture = ProcessAll();
             isProduction = false;
             var bytes = texture.EncodeToPNG();
-            UnityEngine.Object.DestroyImmediate(texture);
+            UnityObject.DestroyImmediate(texture);
             var path = @"Assets/NewTexture.png";
             path = AssetDatabase.GenerateUniqueAssetPath(path);
-            File.WriteAllBytes(Path.GetDirectoryName(Application.dataPath) + '/' + path, bytes);
+            File.WriteAllBytes(path, bytes);
             AssetDatabase.ImportAsset(path);
             ProcessAll();
         }
 
         Texture2D ProcessAll()
         {
-            processData.Clear();
-            exportTextureNode.Process(width, height);
-            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false);
-            texture.SetPixels(exportTextureNode.colors);
+            if (m_ExportTextureNode == null)
+                m_ExportTextureNode = this.Q<ExportTextureNode>();
+            m_ExportTextureNode.StartProcess(new TextureGraphData(width, height));
+            var texture = new Texture2D(width, height, TextureFormat.RGBA32, false) { hideFlags = HideFlags.DontSave };
+            texture.SetPixels(m_ExportTextureNode.colors);
             texture.Apply();
             return texture;
         }
+    }
+
+    sealed class TextureGraphData
+    {
+        public Dictionary<string, IList> portDatas { get; } = new Dictionary<string, IList>();
+        public int width { get; }
+        public int height { get; }
+
+        public TextureGraphData(int width, int height)
+        {
+            this.width = width;
+            this.height = height;
+        }
+
+        public T[] GetArray<T>() => new T[width * height];
     }
 
     sealed class TextureGraphEdge : Edge, IEdgeCallback
@@ -213,14 +199,14 @@ namespace MomomaAssets
         }
     }
 
-    class PreviewWindow : GraphElement
+    sealed class PreviewWindow : GraphElement
     {
         readonly Image m_Image;
 
         internal Texture image
         {
-            get { return m_Image.image.value; }
-            set { m_Image.image = value; }
+            get => m_Image.image;
+            set => m_Image.image = value;
         }
 
         internal PreviewWindow()
@@ -246,6 +232,5 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Group/Group", typeof(TextureGraph))]
-    class SerializableGroup : Group { }
-
+    sealed class SerializableGroup : Group { }
 }

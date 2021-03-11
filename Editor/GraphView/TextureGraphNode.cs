@@ -12,9 +12,6 @@ namespace MomomaAssets
 {
     abstract class TextureGraphNode : Node
     {
-        TextureGraph m_Graph;
-        protected TextureGraph graph => m_Graph ?? (m_Graph = GetFirstAncestorOfType<TextureGraph>());
-
         protected TextureGraphNode() : base()
         {
             style.maxWidth = 150f;
@@ -39,25 +36,22 @@ namespace MomomaAssets
             base.SetPosition(newPos);
         }
 
-        protected abstract void Process();
+        protected abstract void Process(TextureGraphData graphData);
 
-        bool IsProcessed()
+        bool IsProcessed(TextureGraphData graphData)
         {
             foreach (var port in outputContainer.Query<Port>().ToList())
             {
-                if (graph.processData.ContainsKey(port))
-                    return true;
-            }
-            foreach (var port in inputContainer.Query<Port>().ToList())
-            {
-                if (graph.processData.ContainsKey(port))
+                if (graphData.portDatas.ContainsKey(port.persistenceKey))
                     return true;
             }
             return false;
         }
 
-        protected void GetInput<T>(ref T[] inputValue, string portName = null)
+        protected void GetInput<T>(T[] inputValue, TextureGraphData graphData, string portName = null)
         {
+            if (inputValue == null)
+                throw new ArgumentNullException(nameof(inputValue));
             var port = inputContainer.Q<Port>(portName);
             foreach (var edge in port.connections)
             {
@@ -73,16 +67,23 @@ namespace MomomaAssets
                     }
                 }
                 var graphNode = outPort.node as TextureGraphNode;
-                if (!graphNode.IsProcessed())
-                    graphNode.Process();
-                var rawData = graph.processData[outPort];
+                if (!graphNode.IsProcessed(graphData))
+                    graphNode.Process(graphData);
+                var rawData = graphData.portDatas[outPort.persistenceKey];
                 if (rawData is T[] rawTData)
                 {
-                    inputValue = rawTData;
+                    Array.Copy(rawTData, inputValue, rawTData.Length);
                 }
                 else
                 {
-                    inputValue = TextureGraph.AssignTo<T>(rawData);
+                    var adapter = new NodeAdapter();
+                    var adapterInfo = adapter.GetTypeAdapter(outPort.portType, typeof(T));
+                    var index = 0;
+                    foreach (var item in rawData)
+                    {
+                        inputValue[index] = (T)adapterInfo.Invoke(null, new object[] { item });
+                        ++index;
+                    }
                 }
             }
         }
@@ -150,7 +151,7 @@ namespace MomomaAssets
 
         public void Bind(SerializedProperty arrayProperty)
         {
-            arrayProperty.arraySize = 2;
+            arrayProperty.arraySize = 1;
             m_ObjectField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
         }
 
@@ -161,6 +162,7 @@ namespace MomomaAssets
 
         void ReloadTexture()
         {
+            var graph = GetFirstAncestorOfType<TextureGraph>();
             if (graph == null)
                 return;
             if (image.image.value != null)
@@ -175,7 +177,7 @@ namespace MomomaAssets
             }
             RenderTexture renderTexture;
             Material material;
-            var newImage = new Texture2D(m_Width, m_Height, TextureFormat.RGBA32, false);
+            var newImage = new Texture2D(m_Width, m_Height, TextureFormat.RGBA32, false) { hideFlags = HideFlags.DontSave };
             using (var so = new SerializedObject(srcTexture))
             {
                 var lightmapFormat = so.FindProperty("m_LightmapFormat").intValue;
@@ -205,12 +207,15 @@ namespace MomomaAssets
         readonly static Material s_NormalmapMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewEncodedNormals.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
         readonly static Material s_TransparentMaterial = new Material(EditorGUIUtility.LoadRequired("Previews/PreviewTransparent.shader") as Shader) { hideFlags = HideFlags.HideAndDontSave };
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            if (m_Width != graph.width || m_Height != graph.height)
+            if (m_Width != graphData.width || m_Height != graphData.height)
                 ReloadTexture();
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = (image.image.value as Texture2D)?.GetPixels().Select(c => (Vector4)c).ToArray() ?? new Vector4[m_Width * m_Height];
+            if (image.image.value != null)
+                graphData.portDatas[port.persistenceKey] = Array.ConvertAll((image.image.value as Texture2D)?.GetPixels(), c => (Vector4)c);
+            else
+                graphData.portDatas[port.persistenceKey] = graphData.GetArray<Vector4>();
         }
     }
 
@@ -266,16 +271,16 @@ namespace MomomaAssets
             m_HeightPopupField.value = s_PopupValues[6];
         }
 
-        public void Process(int width, int height)
+        public void StartProcess(TextureGraphData graphData)
         {
-            var vectors = new Vector4[width * height];
-            GetInput<Vector4>(ref vectors);
-            m_Colors = Array.ConvertAll(vectors, v => (Color)v);
+            Process(graphData);
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            Process(m_WidthPopupField.value, m_HeightPopupField.value);
+            var vectors = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(vectors, graphData);
+            m_Colors = Array.ConvertAll(vectors, v => (Color)v);
         }
     }
 
@@ -297,16 +302,15 @@ namespace MomomaAssets
             RefreshPorts();
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var length = graph.width * graph.height;
-            var reds = new float[length];
-            var greens = new float[length];
-            var blues = new float[length];
-            var alphas = new float[length];
-            var vectors = new Vector4[length];
-            GetInput<Vector4>(ref vectors);
-            for (var i = 0; i < length; ++i)
+            var reds = graphData.GetArray<float>();
+            var greens = graphData.GetArray<float>();
+            var blues = graphData.GetArray<float>();
+            var alphas = graphData.GetArray<float>();
+            var vectors = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(vectors, graphData);
+            for (var i = 0; i < vectors.Length; ++i)
             {
                 reds[i] = vectors[i].x;
                 greens[i] = vectors[i].y;
@@ -314,13 +318,13 @@ namespace MomomaAssets
                 alphas[i] = vectors[i].w;
             }
             var port = outputContainer.Q<Port>("Red");
-            graph.processData[port] = reds;
+            graphData.portDatas[port.persistenceKey] = reds;
             port = outputContainer.Q<Port>("Green");
-            graph.processData[port] = greens;
+            graphData.portDatas[port.persistenceKey] = greens;
             port = outputContainer.Q<Port>("Blue");
-            graph.processData[port] = blues;
+            graphData.portDatas[port.persistenceKey] = blues;
             port = outputContainer.Q<Port>("Alpha");
-            graph.processData[port] = alphas;
+            graphData.portDatas[port.persistenceKey] = alphas;
         }
     }
 
@@ -342,19 +346,18 @@ namespace MomomaAssets
             RefreshPorts();
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var length = graph.width * graph.height;
-            var reds = new float[length];
-            var greens = new float[length];
-            var blues = new float[length];
-            var alphas = new float[length];
-            GetInput<float>(ref reds, "Red");
-            GetInput<float>(ref greens, "Green");
-            GetInput<float>(ref blues, "Blue");
-            GetInput<float>(ref alphas, "Alpha");
+            var reds = graphData.GetArray<float>();
+            var greens = graphData.GetArray<float>();
+            var blues = graphData.GetArray<float>();
+            var alphas = graphData.GetArray<float>();
+            GetInput<float>(reds, graphData, "Red");
+            GetInput<float>(greens, graphData, "Green");
+            GetInput<float>(blues, graphData, "Blue");
+            GetInput<float>(alphas, graphData, "Alpha");
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = reds.Select((r, i) => new Vector4(r, greens[i], blues[i], alphas[i])).ToArray();
+            graphData.portDatas[port.persistenceKey] = reds.Select((r, i) => new Vector4(r, greens[i], blues[i], alphas[i])).ToArray();
         }
     }
 
@@ -387,10 +390,10 @@ namespace MomomaAssets
             m_VectorField.value = Vector4.one;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = Enumerable.Repeat(m_VectorField.value, graph.width * graph.height).ToArray();
+            graphData.portDatas[port.persistenceKey] = Enumerable.Repeat(m_VectorField.value, graphData.width * graphData.height).ToArray();
         }
     }
 
@@ -452,51 +455,50 @@ namespace MomomaAssets
             m_Slider.value = 1f;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var length = graph.width * graph.height;
-            var valueA = new Vector4[length];
-            var valueB = new Vector4[length];
-            var result = new Vector4[length];
-            GetInput<Vector4>(ref valueA, "A");
-            GetInput<Vector4>(ref valueB, "B");
+            var valueA = graphData.GetArray<Vector4>();
+            var valueB = graphData.GetArray<Vector4>();
+            var result = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(valueA, graphData, "A");
+            GetInput<Vector4>(valueB, graphData, "B");
             switch (m_EnumField.enumValue)
             {
                 case BlendMode.Normal:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a)).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => a)).ToArray();
                     break;
                 case BlendMode.Addition:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a + b)).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => a + b)).ToArray();
                     break;
                 case BlendMode.Difference:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Math.Abs(a - b))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => Math.Abs(a - b))).ToArray();
                     break;
                 case BlendMode.Multiply:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => a * b)).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => a * b)).ToArray();
                     break;
                 case BlendMode.Screen:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => 1f - (1f - a) * (1f - b))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => 1f - (1f - a) * (1f - b))).ToArray();
                     break;
                 case BlendMode.Overlay:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Overlay(a, b))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => Overlay(a, b))).ToArray();
                     break;
                 case BlendMode.HardLight:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => Overlay(b, a))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => Overlay(b, a))).ToArray();
                     break;
                 case BlendMode.SoftLight:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => SoftLight(a, b))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => SoftLight(a, b))).ToArray();
                     break;
                 case BlendMode.Dodge:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => SafetyDivide(b, (1f - a)))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => SafetyDivide(b, (1f - a)))).ToArray();
                     break;
                 case BlendMode.Burn:
-                    result = valueA.Select((v, i) => BlendEachChannel(v, valueB[i], m_Slider.value, (a, b) => 1f - SafetyDivide(1f - b, a))).ToArray();
+                    result = valueA.Zip(valueB, (va, vb) => BlendEachChannel(va, vb, m_Slider.value, (a, b) => 1f - SafetyDivide(1f - b, a))).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("BlendMode");
+                    throw new ArgumentOutOfRangeException(nameof(BlendMode));
             }
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = result;
+            graphData.portDatas[port.persistenceKey] = result;
         }
 
         static Vector4 BlendEachChannel(Vector4 a, Vector4 b, float blendValue, Func<float, float, float> blend)
@@ -553,11 +555,10 @@ namespace MomomaAssets
             m_FloatField.value = 1f;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var v = m_FloatField.value;
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = Enumerable.Repeat(new Vector4(v, v, v, v), graph.width * graph.height).ToArray();
+            graphData.portDatas[port.persistenceKey] = Enumerable.Repeat(m_FloatField.value, graphData.width * graphData.height).ToArray();
         }
     }
 
@@ -603,36 +604,35 @@ namespace MomomaAssets
             m_EnumField.enumValue = CalculateMode.Add;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var length = graph.width * graph.height;
-            var valueA = new float[length];
-            var valueB = new float[length];
-            var result = new float[length];
-            GetInput<float>(ref valueA, "A");
-            GetInput<float>(ref valueB, "B");
+            var valueA = graphData.GetArray<float>();
+            var valueB = graphData.GetArray<float>();
+            var result = graphData.GetArray<float>();
+            GetInput<float>(valueA, graphData, "A");
+            GetInput<float>(valueB, graphData, "B");
             switch (m_EnumField.enumValue)
             {
                 case CalculateMode.Add:
-                    result = valueA.Select((v, i) => v + valueB[i]).ToArray();
+                    result = valueA.Zip(valueB, (a, b) => a + b).ToArray();
                     break;
                 case CalculateMode.Subtract:
-                    result = valueA.Select((v, i) => v - valueB[i]).ToArray();
+                    result = valueA.Zip(valueB, (a, b) => a - b).ToArray();
                     break;
                 case CalculateMode.Multiply:
-                    result = valueA.Select((v, i) => v * valueB[i]).ToArray();
+                    result = valueA.Zip(valueB, (a, b) => a * b).ToArray();
                     break;
                 case CalculateMode.Divide:
-                    result = valueA.Select((v, i) => v / valueB[i]).ToArray();
+                    result = valueA.Zip(valueB, (a, b) => b == 0 ? 0 : a / b).ToArray();
                     break;
                 case CalculateMode.Surplus:
-                    result = valueA.Select((v, i) => v % valueB[i]).ToArray();
+                    result = valueA.Zip(valueB, (a, b) => b == 0 ? 0 : a % b).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("CalculateMode");
+                    throw new ArgumentOutOfRangeException(nameof(CalculateMode));
             }
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = result;
+            graphData.portDatas[port.persistenceKey] = result;
         }
     }
 
@@ -672,17 +672,17 @@ namespace MomomaAssets
             m_EnumField.enumValue = BumpMapType.Normal;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var width = graph.width;
-            var height = graph.height;
-            var length = width * height;
-            var inputs = new Vector4[length];
-            var outputs = new Vector4[length];
-            GetInput<Vector4>(ref inputs);
+            var inputs = graphData.GetArray<Vector4>();
+            var outputs = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(inputs, graphData);
             switch (m_EnumField.enumValue)
             {
                 case BumpMapType.Normal:
+                    var width = graphData.width;
+                    var height = graphData.height;
+                    var length = width * height;
                     var heights = inputs.Select(v => ConvertToHeight(v).x).ToArray();
                     outputs = heights.Select((h, i) => ConvertToNormal(heights[(i - width + length) % length], heights[(i + width) % length], heights[(i + 1) - (i % width == width - 1 ? width : 0)], heights[(i - 1) + (i % width == 0 ? width : 0)], width, height)).ToArray();
                     break;
@@ -690,10 +690,10 @@ namespace MomomaAssets
                     outputs = inputs.Select(ConvertToHeight).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("BumpMapType");
+                    throw new ArgumentOutOfRangeException(nameof(BumpMapType));
             }
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = outputs;
+            graphData.portDatas[port.persistenceKey] = outputs;
         }
 
         Vector4 ConvertToHeight(Vector4 v)
@@ -761,14 +761,13 @@ namespace MomomaAssets
             m_ACurveField.value = AnimationCurve.Linear(0f, 0f, 1f, 1f);
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var length = graph.width * graph.height;
-            var inputs = new Vector4[length];
-            GetInput<Vector4>(ref inputs);
+            var inputs = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(inputs, graphData);
             var outputs = inputs.Select(v => new Vector4(m_RCurveField.value.Evaluate(v.x), m_GCurveField.value.Evaluate(v.y), m_BCurveField.value.Evaluate(v.z), m_ACurveField.value.Evaluate(v.w))).ToArray();
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = outputs;
+            graphData.portDatas[port.persistenceKey] = outputs;
         }
     }
 
@@ -811,20 +810,19 @@ namespace MomomaAssets
             m_EnumField.enumValue = RotationType.Right90;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var width = graph.width;
-            var height = graph.height;
-            var length = width * height;
-            var inputs = new Vector4[length];
-            var outputs = new Vector4[length];
-            GetInput<Vector4>(ref inputs);
+            var width = graphData.width;
+            var height = graphData.height;
+            var inputs = graphData.GetArray<Vector4>();
+            var outputs = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(inputs, graphData);
             var index = 0;
             switch (m_EnumField.enumValue)
             {
                 case RotationType.Right90:
                     for (var j = 0; j < width; ++j)
-                        for (var i = width - 1 - j; i < length; i += width)
+                        for (var i = width - 1 - j; i < inputs.Length; i += width)
                             outputs[index++] = inputs[i];
                     break;
                 case RotationType.Left90:
@@ -842,10 +840,10 @@ namespace MomomaAssets
                     outputs = inputs.Select((v, i) => inputs[i % width * 2 + width * (height - 1) - i]).ToArray();
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException("RotationType");
+                    throw new ArgumentOutOfRangeException(nameof(RotationType));
             }
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = outputs;
+            graphData.portDatas[port.persistenceKey] = outputs;
         }
     }
 
@@ -892,10 +890,10 @@ namespace MomomaAssets
             m_ValueSlider.value = 1f;
         }
 
-        protected override void Process()
+        protected override void Process(TextureGraphData graphData)
         {
-            var inputs = new Vector4[graph.width * graph.height];
-            GetInput<Vector4>(ref inputs);
+            var inputs = graphData.GetArray<Vector4>();
+            GetInput<Vector4>(inputs, graphData);
             var outputs = inputs.Select(vector =>
             {
                 Color.RGBToHSV(vector, out float h, out float s, out float v);
@@ -903,7 +901,7 @@ namespace MomomaAssets
                 return new Vector4(c.r, c.g, c.b, vector.w);
             }).ToArray();
             var port = outputContainer.Q<Port>();
-            graph.processData[port] = outputs;
+            graphData.portDatas[port.persistenceKey] = outputs;
         }
     }
 

@@ -11,7 +11,7 @@ using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
 {
-    public sealed class Graph<TGraphView, TEdge> : IDisposable where TGraphView : GraphView, IGraphViewCallback, new() where TEdge : Edge, IEdgeCallback, new()
+    public sealed class NodeGraph<TGraphView, TEdge> : IDisposable where TGraphView : GraphView, IGraphViewCallback, new() where TEdge : Edge, IEdgeCallback, new()
     {
         sealed class GraphViewObjectHandler : IDisposable
         {
@@ -138,7 +138,7 @@ namespace MomomaAssets
 
         bool isDisposed = false;
 
-        public Graph(EditorWindow editorWindow)
+        public NodeGraph(EditorWindow editorWindow)
         {
             if (editorWindow == null)
                 throw new ArgumentNullException("editorWindow");
@@ -171,7 +171,7 @@ namespace MomomaAssets
             Selection.selectionChanged += OnSelectionChanged;
         }
 
-        ~Graph() { Dispose(); }
+        ~NodeGraph() { Dispose(); }
 
         public void Dispose()
         {
