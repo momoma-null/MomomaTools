@@ -117,7 +117,7 @@ namespace MomomaAssets
             {
                 var pairPort = port.direction == Direction.Input ? edge.output : edge.input;
                 var container = port.direction == Direction.Input ? pairPort.node.inputContainer : pairPort.node.outputContainer;
-                foreach (Port nextport in container)
+                foreach (var nextport in container.Query<Port>().ToList())
                 {
                     if (relativePorts.Add(nextport))
                         FindPortRecursively(nextport, relativePorts);
@@ -211,20 +211,8 @@ namespace MomomaAssets
 
         internal PreviewWindow()
         {
-            style.backgroundColor = new Color(0.2470588f, 0.2470588f, 0.2470588f, 1f);
-            style.borderColor = new Color(0.09803922f, 0.09803922f, 0.09803922f, 1f);
-            style.borderRadius = 6f;
-            style.positionType = PositionType.Absolute;
-            style.positionRight = 4f;
-            style.positionBottom = 4f;
-            style.width = 136f;
-            style.height = 136f;
-            style.marginRight = 0f;
-            style.marginLeft = 0f;
-            style.marginTop = 0f;
-            style.marginBottom = 0f;
             capabilities = Capabilities.Movable;
-            m_Image = new Image { style = { marginRight = 3f, marginLeft = 3f, marginTop = 3f, marginBottom = 3f } };
+            m_Image = new Image();
             Add(m_Image);
             m_Image.StretchToParentSize();
             this.AddManipulator(new Dragger { clampToParentEdges = true });

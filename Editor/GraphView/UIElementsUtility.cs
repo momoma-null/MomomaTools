@@ -24,43 +24,10 @@ namespace MomomaAssets
         }
     }
 
-    public class SliderWithFloatField : VisualElement, INotifyValueChanged<float>
+    public class SliderWithFloatField : BaseField<float>
     {
         readonly FloatField floatField;
         readonly Slider slider;
-
-        public float value
-        {
-            get { return slider.value; }
-            set { slider.value = value; }
-        }
-
-        public void OnValueChanged(EventCallback<ChangeEvent<float>> callback)
-        {
-            slider.OnValueChanged(callback);
-        }
-
-        public void RemoveOnValueChanged(EventCallback<ChangeEvent<float>> callback)
-        {
-            slider.RemoveOnValueChanged(callback);
-        }
-
-        public void SetValueAndNotify(float newValue)
-        {
-            value = newValue;
-        }
-
-        public void SetValueWithoutNotify(float newValue)
-        {
-            floatField.SetValueWithoutNotify(newValue);
-            slider.SetValueWithoutNotify(newValue);
-        }
-
-        public void BindProperty(SerializedProperty property)
-        {
-            floatField.BindProperty(property);
-            slider.BindProperty(property);
-        }
 
         public SliderWithFloatField(float start, float end, float initial)
         {
@@ -73,6 +40,13 @@ namespace MomomaAssets
             style.flexDirection = FlexDirection.Row;
             Add(slider);
             Add(floatField);
+        }
+
+        public override void SetValueWithoutNotify(float newValue)
+        {
+            base.SetValueWithoutNotify(newValue);
+            floatField.SetValueWithoutNotify(newValue);
+            slider.SetValueWithoutNotify(newValue);
         }
     }
 
@@ -133,7 +107,7 @@ namespace MomomaAssets
             SetValueWithoutNotify(Array.IndexOf(m_Choices, Enum.GetName(typeof(T), defaultValue)));
         }
 
-        public EnumPopupField(List<T> choices, int defaultIndex) : this()
+        public EnumPopupField(int defaultIndex) : this()
         {
             if (defaultIndex < 0 || m_Choices.Length <= defaultIndex)
                 throw new ArgumentException(string.Format("Default Index {0} is beyond the scope of possible value", defaultIndex));

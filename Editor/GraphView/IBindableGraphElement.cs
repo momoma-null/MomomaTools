@@ -1,17 +1,15 @@
 ﻿using System;
-using UnityEditor;
+using System.Collections.Generic;
+using UnityEngine.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
 
 namespace MomomaAssets
 {
     public interface IBindableGraphElement
     {
-        void Reset();
+        IEnumerable<IBindable> BindableElements { get; }
         event Action<GraphElement> onValueChanged;
-    }
-
-    public interface IBindableGraphElement<T> : IBindableGraphElement
-    {
-        void Bind(SerializedProperty arrayProperty);
+        void SetFieldValues(ISerializedGraphElement serializedGraphElement);
+        void GetFieldValues(ISerializedGraphElement serializedGraphElement);
     }
 }

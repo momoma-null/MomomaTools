@@ -11,7 +11,9 @@ using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
 {
-    public sealed class NodeGraph<TGraphView, TEdge> : IDisposable where TGraphView : GraphView, IGraphViewCallback, new() where TEdge : Edge, IEdgeCallback, new()
+    public sealed class NodeGraph<TGraphView, TEdge> : IDisposable
+        where TGraphView : GraphView, IGraphViewCallback, new()
+        where TEdge : Edge, IEdgeCallback, new()
     {
         sealed class GraphViewObjectHandler : IDisposable
         {
@@ -318,8 +320,7 @@ namespace MomomaAssets
             var guidsToReplace = new Dictionary<string, string>();
             foreach (var serializedGraphElement in serializedGraphElements)
             {
-                string newGuid;
-                if (!guidsToReplace.TryGetValue(serializedGraphElement.Guid, out newGuid))
+                if (!guidsToReplace.TryGetValue(serializedGraphElement.Guid, out var newGuid))
                 {
                     newGuid = Guid.NewGuid().ToString();
                     guidsToReplace[serializedGraphElement.Guid] = newGuid;
@@ -469,29 +470,6 @@ namespace MomomaAssets
             m_GraphViewObjectHandler.ApplyModifiedProperties();
             Undo.RegisterCreatedObjectUndo(graphElementObject, $"Create {graphElement.GetType().Name}");
             graphElementObject.Deserialize(null, m_GraphView);
-            if (graphElement is IBindableGraphElement bindable)
-                bindable.Reset();
         }
-    }
-
-    [Serializable]
-    public sealed class SerializableFieldValue
-    {
-        public IReadOnlyList<float> FloatValues => m_FloatValues;
-        public IReadOnlyList<int> IntValues => m_IntValues;
-        public IReadOnlyList<Vector4> Vector4Values => m_Vector4Values;
-        public IReadOnlyList<AnimationCurve> AnimationCurveValues => m_AnimationCurveValues;
-        public IReadOnlyList<UnityObject> ObjectReferenceValues => m_ObjectReferenceValues;
-
-        [SerializeField]
-        float[] m_FloatValues = new float[0];
-        [SerializeField]
-        int[] m_IntValues = new int[0];
-        [SerializeField]
-        Vector4[] m_Vector4Values = new Vector4[0];
-        [SerializeField]
-        AnimationCurve[] m_AnimationCurveValues = new AnimationCurve[0];
-        [SerializeField]
-        UnityObject[] m_ObjectReferenceValues = new UnityObject[0];
     }
 }

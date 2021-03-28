@@ -7,6 +7,7 @@ using UnityEngine.Experimental.UIElements.StyleEnums;
 using UnityEditor;
 using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
+using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
 {
@@ -38,16 +39,6 @@ namespace MomomaAssets
 
         protected abstract void Process(TextureGraphData graphData);
 
-        bool IsProcessed(TextureGraphData graphData)
-        {
-            foreach (var port in outputContainer.Query<Port>().ToList())
-            {
-                if (graphData.portDatas.ContainsKey(port.persistenceKey))
-                    return true;
-            }
-            return false;
-        }
-
         protected void GetInput<T>(T[] inputValue, TextureGraphData graphData, string portName = null)
         {
             if (inputValue == null)
@@ -66,10 +57,12 @@ namespace MomomaAssets
                         outPort = e.output;
                     }
                 }
-                var graphNode = outPort.node as TextureGraphNode;
-                if (!graphNode.IsProcessed(graphData))
+                if (!graphData.portDatas.TryGetValue(outPort.persistenceKey, out var rawData))
+                {
+                    var graphNode = outPort.node as TextureGraphNode;
                     graphNode.Process(graphData);
-                var rawData = graphData.portDatas[outPort.persistenceKey];
+                    rawData = graphData.portDatas[outPort.persistenceKey];
+                }
                 if (rawData is T[] rawTData)
                 {
                     Array.Copy(rawTData, inputValue, rawTData.Length);
@@ -116,8 +109,9 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Input/Texture", typeof(TextureGraph))]
-    class ImportTextureNode : TextureGraphNode, IBindableGraphElement<UnityEngine.Object>
+    sealed class ImportTextureNode : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly ObjectField m_ObjectField;
@@ -132,11 +126,10 @@ namespace MomomaAssets
             style.width = 136f;
             AddOutputPort<Vector4>("Color");
             RefreshPorts();
-            m_ObjectField = new ObjectField() { objectType = typeof(Texture2D), style = { positionLeft = 0f, positionRight = 0f } };
+            m_ObjectField = new ObjectField() { objectType = typeof(Texture2D) };
             m_ObjectField.OnValueChanged(e => ReloadTexture());
             m_ObjectField.OnValueChanged(e => onValueChanged?.Invoke(this));
-            m_ObjectField[0].style.flexShrink = 1f;
-            m_ObjectField[0][1].style.flexShrink = 1f;
+            BindableElements = new[] { m_ObjectField };
             extensionContainer.Add(m_ObjectField);
             image = new Image { scaleMode = ScaleMode.ScaleToFit, style = { positionLeft = 0f, positionRight = 0f, positionBottom = 0f, marginRight = 3f, marginLeft = 3f } };
             extensionContainer.Add(image);
@@ -146,18 +139,17 @@ namespace MomomaAssets
         ~ImportTextureNode()
         {
             if (image.image.value != null)
-                Texture.DestroyImmediate(image.image);
+                UnityObject.DestroyImmediate(image.image);
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_ObjectField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_ObjectField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_ObjectField.value = null;
+            serializedGraphElement.GetFieldValues(m_ObjectField);
         }
 
         void ReloadTexture()
@@ -166,7 +158,7 @@ namespace MomomaAssets
             if (graph == null)
                 return;
             if (image.image.value != null)
-                Texture.DestroyImmediate(image.image);
+                UnityObject.DestroyImmediate(image.image);
             m_Width = graph.width;
             m_Height = graph.height;
             var srcTexture = m_ObjectField.value as Texture2D;
@@ -219,11 +211,12 @@ namespace MomomaAssets
         }
     }
 
-    class ExportTextureNode : TextureGraphNode, IBindableGraphElement<int>
+    sealed class ExportTextureNode : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
-        static readonly List<int> s_PopupValues = new List<int>() { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192 };
+        static readonly List<int> s_PopupValues = new List<int>(9) { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192 };
 
         Color[] m_Colors;
         internal Color[] colors => m_Colors.ToArray();
@@ -242,6 +235,7 @@ namespace MomomaAssets
             m_HeightPopupField.SetEnabled(false);
             m_WidthPopupField.OnValueChanged(OnWidthValueChanged);
             m_WidthPopupField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_WidthPopupField, m_HeightPopupField };
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Width", m_WidthPopupField));
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("Height", m_HeightPopupField));
             RefreshExpandedState();
@@ -252,23 +246,15 @@ namespace MomomaAssets
             m_HeightPopupField.value = e.newValue;
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 2;
-            var widthSP = arrayProperty.GetArrayElementAtIndex(0);
-            if (!s_PopupValues.Contains(widthSP.intValue))
-                widthSP.intValue = s_PopupValues[6];
-            var heightSP = arrayProperty.GetArrayElementAtIndex(1);
-            if (!s_PopupValues.Contains(heightSP.intValue))
-                heightSP.intValue = s_PopupValues[6];
-            m_WidthPopupField.BindProperty(widthSP);
-            m_HeightPopupField.BindProperty(heightSP);
+            serializedGraphElement.AddFieldValue(m_WidthPopupField);
+            serializedGraphElement.AddFieldValue(m_HeightPopupField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_WidthPopupField.value = s_PopupValues[6];
-            m_HeightPopupField.value = s_PopupValues[6];
+            serializedGraphElement.GetFieldValues(m_WidthPopupField, m_HeightPopupField);
         }
 
         public void StartProcess(TextureGraphData graphData)
@@ -285,7 +271,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Decompose", typeof(TextureGraph))]
-    class DecomposeChannelsNode : TextureGraphNode
+    sealed class DecomposeChannelsNode : TextureGraphNode
     {
         DecomposeChannelsNode() : base()
         {
@@ -329,7 +315,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Combine", typeof(TextureGraph))]
-    class CombineChannelsNode : TextureGraphNode
+    sealed class CombineChannelsNode : TextureGraphNode
     {
         CombineChannelsNode() : base()
         {
@@ -362,8 +348,9 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Constant", typeof(TextureGraph))]
-    class ConstantColor : TextureGraphNode, IBindableGraphElement<Vector4>
+    sealed class ConstantColor : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly Vector4Field m_VectorField;
@@ -375,19 +362,19 @@ namespace MomomaAssets
             RefreshPorts();
             m_VectorField = new Vector4Field() { style = { flexWrap = Wrap.NoWrap } };
             m_VectorField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_VectorField };
             extensionContainer.Add(m_VectorField);
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_VectorField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_VectorField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_VectorField.value = Vector4.one;
+            serializedGraphElement.GetFieldValues(m_VectorField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -398,7 +385,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Blend", typeof(TextureGraph))]
-    class BlendNode : TextureGraphNode, IBindableGraphElement<int>, IBindableGraphElement<float>
+    sealed class BlendNode : TextureGraphNode, IBindableGraphElement
     {
         enum BlendMode
         {
@@ -414,6 +401,7 @@ namespace MomomaAssets
             Burn
         }
 
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly EnumPopupField<BlendMode> m_EnumField;
@@ -432,27 +420,22 @@ namespace MomomaAssets
             m_Slider = new SliderWithFloatField(0f, 1f, 1f);
             m_EnumField.OnValueChanged(e => onValueChanged?.Invoke(this));
             m_Slider.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new BindableElement[] { m_EnumField, m_Slider };
             extensionContainer.Add(m_EnumField);
             extensionContainer.Add(m_Slider);
             RefreshExpandedState();
         }
 
-        void IBindableGraphElement<int>.Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_EnumField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_EnumField);
+            serializedGraphElement.AddFieldValue(m_Slider);
         }
 
-        void IBindableGraphElement<float>.Bind(SerializedProperty arrayProperty)
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_Slider.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
-        }
-
-        public void Reset()
-        {
-            m_EnumField.enumValue = BlendMode.Normal;
-            m_Slider.value = 1f;
+            serializedGraphElement.GetFieldValues(m_EnumField);
+            serializedGraphElement.GetFieldValues(m_Slider);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -527,32 +510,33 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Single/Constant", typeof(TextureGraph))]
-    class ConstantFloat : TextureGraphNode, IBindableGraphElement<float>
+    sealed class ConstantFloat : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly FloatField m_FloatField;
 
-        internal ConstantFloat() : base()
+        ConstantFloat() : base()
         {
             title = "Constant Float";
             AddOutputPort<float>("Value");
             RefreshPorts();
             m_FloatField = new FloatField();
             m_FloatField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_FloatField };
             extensionContainer.Add(m_FloatField);
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_FloatField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_FloatField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_FloatField.value = 1f;
+            serializedGraphElement.GetFieldValues(m_FloatField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -563,7 +547,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Single/Math", typeof(TextureGraph))]
-    class MathNode : TextureGraphNode, IBindableGraphElement<int>
+    sealed class MathNode : TextureGraphNode, IBindableGraphElement
     {
         enum CalculateMode
         {
@@ -574,11 +558,12 @@ namespace MomomaAssets
             Surplus
         }
 
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly EnumPopupField<CalculateMode> m_EnumField;
 
-        internal MathNode() : base()
+        MathNode() : base()
         {
             title = "Math";
             var port = AddInputPort<float>("A");
@@ -589,19 +574,19 @@ namespace MomomaAssets
             RefreshPorts();
             m_EnumField = new EnumPopupField<CalculateMode>(CalculateMode.Add);
             m_EnumField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_EnumField };
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_EnumField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_EnumField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_EnumField.enumValue = CalculateMode.Add;
+            serializedGraphElement.GetFieldValues(m_EnumField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -637,7 +622,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Bump", typeof(TextureGraph))]
-    class BumpMapNode : TextureGraphNode, IBindableGraphElement<int>
+    sealed class BumpMapNode : TextureGraphNode, IBindableGraphElement
     {
         enum BumpMapType
         {
@@ -645,6 +630,7 @@ namespace MomomaAssets
             Height
         }
 
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly EnumPopupField<BumpMapType> m_EnumField;
@@ -657,19 +643,19 @@ namespace MomomaAssets
             RefreshPorts();
             m_EnumField = new EnumPopupField<BumpMapType>(BumpMapType.Normal);
             m_EnumField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_EnumField };
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_EnumField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_EnumField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_EnumField.enumValue = BumpMapType.Normal;
+            serializedGraphElement.GetFieldValues(m_EnumField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -712,8 +698,9 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/Tone Curve", typeof(TextureGraph))]
-    class ToneCurveNode : TextureGraphNode, IBindableGraphElement<AnimationCurve>
+    sealed class ToneCurveNode : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly CurveField m_RCurveField;
@@ -737,6 +724,7 @@ namespace MomomaAssets
             m_RCurveField.OnValueChanged(e => m_BCurveField.value = e.newValue);
             m_RCurveField.OnValueChanged(e => onValueChanged?.Invoke(this));
             m_ACurveField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_RCurveField, m_GCurveField, m_BCurveField, m_ACurveField };
             extensionContainer.Add(m_RCurveField);
             extensionContainer.Add(m_GCurveField);
             extensionContainer.Add(m_BCurveField);
@@ -744,21 +732,17 @@ namespace MomomaAssets
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 4;
-            m_RCurveField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
-            m_GCurveField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
-            m_BCurveField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
-            m_ACurveField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_RCurveField);
+            serializedGraphElement.AddFieldValue(m_GCurveField);
+            serializedGraphElement.AddFieldValue(m_BCurveField);
+            serializedGraphElement.AddFieldValue(m_ACurveField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_RCurveField.value = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-            m_GCurveField.value = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-            m_BCurveField.value = AnimationCurve.Linear(0f, 0f, 1f, 1f);
-            m_ACurveField.value = AnimationCurve.Linear(0f, 0f, 1f, 1f);
+            serializedGraphElement.GetFieldValues(m_RCurveField, m_GCurveField, m_BCurveField, m_ACurveField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -772,7 +756,7 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Transform/Rotate", typeof(TextureGraph))]
-    class RotateNode : TextureGraphNode, IBindableGraphElement<int>
+    sealed class RotateNode : TextureGraphNode, IBindableGraphElement
     {
         enum RotationType
         {
@@ -783,6 +767,7 @@ namespace MomomaAssets
             Vertical
         }
 
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly EnumPopupField<RotationType> m_EnumField;
@@ -795,19 +780,19 @@ namespace MomomaAssets
             RefreshPorts();
             m_EnumField = new EnumPopupField<RotationType>(RotationType.Right90);
             m_EnumField.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_EnumField };
             extensionContainer.Add(m_EnumField);
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 1;
-            m_EnumField.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
+            serializedGraphElement.AddFieldValue(m_EnumField);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_EnumField.enumValue = RotationType.Right90;
+            serializedGraphElement.GetFieldValues(m_EnumField);
         }
 
         protected override void Process(TextureGraphData graphData)
@@ -848,8 +833,9 @@ namespace MomomaAssets
     }
 
     [NodeMenu("Color/HSV Shift", typeof(TextureGraph))]
-    class HSVShiftNode : TextureGraphNode, IBindableGraphElement<float>
+    sealed class HSVShiftNode : TextureGraphNode, IBindableGraphElement
     {
+        public IEnumerable<IBindable> BindableElements { get; }
         public event Action<GraphElement> onValueChanged;
 
         readonly SliderWithFloatField m_HueSlider;
@@ -869,25 +855,23 @@ namespace MomomaAssets
             m_HueSlider.OnValueChanged(e => onValueChanged?.Invoke(this));
             m_SaturationSlider.OnValueChanged(e => onValueChanged?.Invoke(this));
             m_ValueSlider.OnValueChanged(e => onValueChanged?.Invoke(this));
+            BindableElements = new[] { m_HueSlider, m_SaturationSlider, m_ValueSlider };
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("H", m_HueSlider));
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("S", m_SaturationSlider));
             extensionContainer.Add(UIElementsUtility.CreateLabeledElement("V", m_ValueSlider));
             RefreshExpandedState();
         }
 
-        public void Bind(SerializedProperty arrayProperty)
+        public void SetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            arrayProperty.arraySize = 3;
-            m_HueSlider.BindProperty(arrayProperty.GetArrayElementAtIndex(0));
-            m_SaturationSlider.BindProperty(arrayProperty.GetArrayElementAtIndex(1));
-            m_ValueSlider.BindProperty(arrayProperty.GetArrayElementAtIndex(2));
+            serializedGraphElement.AddFieldValue(m_HueSlider);
+            serializedGraphElement.AddFieldValue(m_SaturationSlider);
+            serializedGraphElement.AddFieldValue(m_ValueSlider);
         }
 
-        public void Reset()
+        public void GetFieldValues(ISerializedGraphElement serializedGraphElement)
         {
-            m_HueSlider.value = 0f;
-            m_SaturationSlider.value = 1f;
-            m_ValueSlider.value = 1f;
+            serializedGraphElement.GetFieldValues(m_HueSlider, m_SaturationSlider, m_ValueSlider);
         }
 
         protected override void Process(TextureGraphData graphData)

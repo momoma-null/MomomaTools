@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Experimental.UIElements;
 
 namespace MomomaAssets
 {
@@ -9,6 +10,8 @@ namespace MomomaAssets
         string TypeName { get; set; }
         Rect Position { get; set; }
         IList<string> ReferenceGuids { get; }
-        SerializableFieldValue FieldValue { get; }
+        IReadOnlyList<IFieldValue> FieldValues { get; }
+
+        void AddFieldValue<T>(INotifyValueChanged<T> field);
     }
 }

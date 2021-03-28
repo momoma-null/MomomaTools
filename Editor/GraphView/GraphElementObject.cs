@@ -1,15 +1,17 @@
 ﻿using System;
 using System.Reflection;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEditor;
 using UnityEngine.Experimental.UIElements;
+using UnityEditor;
+using UnityEditor.Experimental.UIElements;
 using UnityEditor.Experimental.UIElements.GraphView;
+using MomomaAssets.Extensions;
+using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
 {
-    public sealed class GraphElementObject : ScriptableObject, ISerializedGraphElement, ISerializationCallbackReceiver
+    public sealed class GraphElementObject : ScriptableObject, ISerializedGraphElement
     {
         GraphElementObject() { }
 
@@ -22,12 +24,13 @@ namespace MomomaAssets
         [SerializeField]
         List<string> m_ReferenceGuids = new List<string>();
         [SerializeField]
-        SerializableFieldValue m_FieldValue = new SerializableFieldValue();
+        FieldValueObjectBase[] m_FieldValues = new FieldValueObjectBase[] { };
 
         SerializedObject m_SerializedObject;
         SerializedProperty m_GuidProperty;
         SerializedProperty m_PositionProperty;
         SerializedProperty m_ReferenceGuidsProperty;
+        SerializedProperty m_FieldValuesProperty;
 
         public string Guid
         {
@@ -51,7 +54,34 @@ namespace MomomaAssets
             }
         }
         public IList<string> ReferenceGuids { get; private set; }
-        public SerializableFieldValue FieldValue => m_FieldValue;
+        public IReadOnlyList<IFieldValue> FieldValues => m_FieldValues;
+
+        static readonly Dictionary<Type, Func<FieldValueObjectBase>> s_FieldValueObjectCreators = new Dictionary<Type, Func<FieldValueObjectBase>>
+        {
+            { typeof(float), CreateInstance<FloatValueObject> },
+            { typeof(Color), CreateInstance<ColorValueObject> },
+            { typeof(Vector4), CreateInstance<Vector4ValueObject> },
+            { typeof(AnimationCurve), CreateInstance<AnimationCurveValueObject> },
+            { typeof(UnityObject), CreateInstance<UnityObjectValueObject> },
+        };
+
+        public void AddFieldValue<T>(INotifyValueChanged<T> field)
+        {
+            if (!s_FieldValueObjectCreators.TryGetValue(typeof(T), out var getInstance))
+                throw new ArgumentOutOfRangeException(nameof(T));
+            var fieldValueObject = getInstance();
+            var so = new SerializedObject(fieldValueObject);
+            var sp = so.FindProperty("m_Value");
+            sp.SetValue(field.value);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            if (field is IBindable bindable)
+                bindable.BindProperty(sp);
+            m_SerializedObject.Update();
+            ++m_FieldValuesProperty.arraySize;
+            using (var elementSP = m_FieldValuesProperty.GetArrayElementAtIndex(m_FieldValuesProperty.arraySize - 1))
+                elementSP.objectReferenceValue = fieldValueObject;
+            m_SerializedObject.ApplyModifiedProperties();
+        }
 
         void Awake()
         {
@@ -61,9 +91,11 @@ namespace MomomaAssets
         void OnEnable()
         {
             m_SerializedObject = new SerializedObject(this);
-            m_GuidProperty = m_SerializedObject.FindProperty("m_Guid");
-            m_PositionProperty = m_SerializedObject.FindProperty("m_Position");
-            m_ReferenceGuidsProperty = m_SerializedObject.FindProperty("m_ReferenceGuids");
+            m_GuidProperty = m_SerializedObject.FindProperty(nameof(m_Guid));
+            m_PositionProperty = m_SerializedObject.FindProperty(nameof(m_Position));
+            m_ReferenceGuidsProperty = m_SerializedObject.FindProperty(nameof(m_ReferenceGuids));
+            m_FieldValuesProperty = m_SerializedObject.FindProperty(nameof(m_FieldValues));
+            ReferenceGuids = new SerializedPropertyList<string>(m_ReferenceGuidsProperty, sp => sp.stringValue, (sp, val) => sp.stringValue = val);
         }
 
         void OnDestroy()
@@ -71,60 +103,14 @@ namespace MomomaAssets
             m_GuidProperty?.Dispose();
             m_PositionProperty?.Dispose();
             m_ReferenceGuidsProperty?.Dispose();
+            m_FieldValuesProperty?.Dispose();
             m_SerializedObject?.Dispose();
             m_GuidProperty = null;
             m_PositionProperty = null;
             m_ReferenceGuidsProperty = null;
+            m_FieldValuesProperty = null;
             m_SerializedObject = null;
         }
-
-        void ISerializationCallbackReceiver.OnAfterDeserialize()
-        {
-            var callbackList = new CallbackList<string>(m_ReferenceGuids);
-            callbackList.OnSetIndexer += (index, item) =>
-            {
-                m_SerializedObject.Update();
-                using (var sp = m_ReferenceGuidsProperty.GetArrayElementAtIndex(index))
-                    sp.stringValue = item;
-                m_SerializedObject.ApplyModifiedProperties();
-            };
-            ReferenceGuids = callbackList;
-        }
-
-        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
-    }
-
-    public sealed class CallbackList<T> : IList<T>
-    {
-        readonly IList<T> m_SourceList;
-
-        public CallbackList(IList<T> list)
-        {
-            m_SourceList = list;
-        }
-
-        public T this[int index]
-        {
-            get => m_SourceList[index];
-            set => OnSetIndexer?.Invoke(index, value);
-        }
-
-        public event Action<int, T> OnSetIndexer;
-
-        public int Count => m_SourceList.Count;
-        bool ICollection<T>.IsReadOnly => false;
-
-        public int IndexOf(T item) => m_SourceList.IndexOf(item);
-        public void Insert(int index, T item) => m_SourceList.Insert(index, item);
-        public void RemoveAt(int index) => m_SourceList.RemoveAt(index);
-
-        public void Add(T item) => m_SourceList.Add(item);
-        public void Clear() => m_SourceList.Clear();
-        public bool Contains(T item) => m_SourceList.Contains(item);
-        public void CopyTo(T[] array, int arrayIndex) => m_SourceList.CopyTo(array, arrayIndex);
-        public bool Remove(T item) => m_SourceList.Remove(item);
-        public IEnumerator<T> GetEnumerator() => m_SourceList.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => m_SourceList.GetEnumerator();
     }
 
     [Serializable]
@@ -139,31 +125,64 @@ namespace MomomaAssets
         [SerializeField]
         List<string> m_ReferenceGuids = new List<string>();
         [SerializeField]
-        SerializableFieldValue m_FieldValue = new SerializableFieldValue();
+        List<FieldValue> m_FieldValues = new List<FieldValue>();
 
         public string Guid { get => m_Guid; set => m_Guid = value; }
         public string TypeName { get => m_TypeName; set => m_TypeName = value; }
         public Rect Position { get => m_Position; set => m_Position = value; }
         public IList<string> ReferenceGuids => m_ReferenceGuids;
-        public SerializableFieldValue FieldValue => m_FieldValue;
+        public IReadOnlyList<IFieldValue> FieldValues => m_FieldValues;
+
+        public void AddFieldValue<T>(INotifyValueChanged<T> field)
+        {
+            switch (field.value)
+            {
+                case float floatValue:
+                    m_FieldValues.Add(new FloatValue(floatValue));
+                    break;
+                case Color colorValue:
+                    m_FieldValues.Add(new ColorValue(colorValue));
+                    break;
+                case Vector4 vector4Value:
+                    m_FieldValues.Add(new Vector4Value(vector4Value));
+                    break;
+                case AnimationCurve animationCurveValue:
+                    m_FieldValues.Add(new AnimationCurveValue(animationCurveValue));
+                    break;
+                case UnityObject unityObjectValue:
+                    m_FieldValues.Add(new UnityObjectValue(unityObjectValue));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(T));
+            }
+        }
     }
 
     public static class SerializedGraphElementExtensions
     {
+        public static void GetFieldValues<T>(this ISerializedGraphElement serializedGraphElement, params INotifyValueChanged<T>[] fields)
+        {
+            var index = 0;
+            foreach (var fieldValue in serializedGraphElement.FieldValues)
+            {
+                if (fieldValue is IFieldValue<T> fieldValueGeneric)
+                {
+                    fields[index].value = fieldValueGeneric.Value;
+                    ++index;
+                }
+            }
+        }
+
         static readonly Dictionary<string, ConstructorInfo> s_ConstructorInfos = new Dictionary<string, ConstructorInfo>();
 
         public static T Serialize<T>(this GraphElement graphElement) where T : ScriptableObject, ISerializedGraphElement
         {
-            if (graphElement == null)
-                throw new ArgumentNullException("graphElement");
             var serializedGraphElement = ScriptableObject.CreateInstance<T>();
             return graphElement.SerializeInternal<T>(serializedGraphElement);
         }
 
         public static T Serialize<T>(this GraphElement graphElement, T existing) where T : class, ISerializedGraphElement, new()
         {
-            if (graphElement == null)
-                throw new ArgumentNullException("graphElement");
             var serializedGraphElement = existing ?? new T();
             return graphElement.SerializeInternal<T>(serializedGraphElement);
         }
@@ -184,15 +203,17 @@ namespace MomomaAssets
                     referenceGuids.Add(edge.output?.persistenceKey);
                     break;
             }
+            if (graphElement is IBindableGraphElement bindableGraphElement)
+            {
+                bindableGraphElement.SetFieldValues(serializedGraphElement);
+            }
             return serializedGraphElement;
         }
 
-        public static GraphElement Deserialize(this ISerializedGraphElement serializedGraphElement, GraphElement graphElement, GraphView graphView)
+        public static GraphElement Deserialize<TGraphView>(this ISerializedGraphElement serializedGraphElement, GraphElement graphElement, TGraphView graphView) where TGraphView : GraphView, IGraphViewCallback
         {
-            if (serializedGraphElement == null)
-                throw new ArgumentNullException("serializedGraphElement");
             if (graphView == null)
-                throw new ArgumentNullException("graphView");
+                throw new ArgumentNullException(nameof(graphView));
             if (graphElement == null)
             {
                 var typeName = serializedGraphElement.TypeName;
@@ -203,40 +224,9 @@ namespace MomomaAssets
                 }
                 graphElement = info.Invoke(new object[0]) as GraphElement;
                 graphView.AddElement(graphElement);
-                if (graphElement is IBindableGraphElement bindable && serializedGraphElement is ScriptableObject scriptableObject)
+                if (graphElement is IBindableGraphElement bindable)
                 {
-                    var so = new SerializedObject(scriptableObject);
-                    using (var fieldSP = so.FindProperty("m_FieldValue"))
-                    {
-                        if (graphElement is IBindableGraphElement<float> floatField)
-                        {
-                            var arraySP = fieldSP.FindPropertyRelative("m_FloatValues");
-                            floatField.Bind(arraySP);
-                        }
-                        if (graphElement is IBindableGraphElement<int> intField)
-                        {
-                            var arraySP = fieldSP.FindPropertyRelative("m_IntValues");
-                            intField.Bind(arraySP);
-                        }
-                        if (graphElement is IBindableGraphElement<Vector4> vector4Field)
-                        {
-                            var arraySP = fieldSP.FindPropertyRelative("m_Vector4Values");
-                            vector4Field.Bind(arraySP);
-                        }
-                        if (graphElement is IBindableGraphElement<AnimationCurve> curveField)
-                        {
-                            var arraySP = fieldSP.FindPropertyRelative("m_AnimationCurveValues");
-                            curveField.Bind(arraySP);
-                        }
-                        if (graphElement is IBindableGraphElement<UnityEngine.Object> objectField)
-                        {
-                            var arraySP = fieldSP.FindPropertyRelative("m_ObjectReferenceValues");
-                            objectField.Bind(arraySP);
-                        }
-                    }
-                    so.ApplyModifiedPropertiesWithoutUndo();
-                    if (graphView is IGraphViewCallback bindableGraphView)
-                        bindable.onValueChanged += bindableGraphView.OnValueChanged;
+                    bindable.GetFieldValues(serializedGraphElement);
                 }
             }
             graphElement.persistenceKey = serializedGraphElement.Guid;
