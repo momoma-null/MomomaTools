@@ -71,7 +71,7 @@ namespace MomomaAssets
             m_ExportTextureNode.SetPosition(pos);
         }
 
-        void IGraphViewCallback.OnValueChanged(GraphElement graphElement)
+        void IGraphViewCallback.OnValueChanged(VisualElement visualElement)
         {
             m_RecalculateScheduledItem.Pause();
             m_RecalculateScheduledItem.ExecuteLater(500);

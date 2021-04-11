@@ -1,11 +1,10 @@
-﻿using System.Collections.Generic;
-using UnityEditor.Experimental.UIElements.GraphView;
+﻿using UnityEngine.Experimental.UIElements;
 
 namespace MomomaAssets
 {
     public interface IGraphViewCallback
     {
         void Initialize();
-        void OnValueChanged(GraphElement graphElement);
+        void OnValueChanged(VisualElement visualElement);
     }
 }

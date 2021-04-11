@@ -1,13 +1,9 @@
 ﻿using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Experimental.UIElements;
 using UnityEngine.Experimental.UIElements.StyleEnums;
 using UnityEditor;
 using UnityEditor.Experimental.UIElements;
-using UnityEditor.Experimental.UIElements.GraphView;
 
 namespace MomomaAssets
 {
@@ -24,46 +20,47 @@ namespace MomomaAssets
         }
     }
 
-    public class SliderWithFloatField : BaseField<float>
+    public sealed class SliderWithFloatField : BaseField<float>
     {
-        readonly FloatField floatField;
-        readonly Slider slider;
+        readonly FloatField m_FloatField;
+        readonly Slider m_Slider;
 
         public SliderWithFloatField(float start, float end, float initial)
         {
-            slider = new Slider(start, end) { style = { flexGrow = 1f } };
-            floatField = new FloatField() { style = { flexGrow = 0.8f, flexShrink = 1f } };
-            slider.OnValueChanged(e => floatField.value = e.newValue);
-            floatField.OnValueChanged(e => slider.value = e.newValue);
-            slider.value = initial;
-            floatField.value = initial;
+            m_Slider = new Slider(start, end) { style = { flexGrow = 1f } };
+            m_FloatField = new FloatField() { style = { flexGrow = 0.8f, flexShrink = 1f } };
+            m_Slider.OnValueChanged(e => e.target = this);
+            m_Slider.OnValueChanged(e => value = e.newValue);
+            m_FloatField.OnValueChanged(e => e.target = this);
+            m_FloatField.OnValueChanged(e => value = e.newValue);
+            OnValueChanged(e => m_Slider.value = e.newValue);
+            OnValueChanged(e => m_FloatField.value = e.newValue);
+            value = initial;
             style.flexDirection = FlexDirection.Row;
-            Add(slider);
-            Add(floatField);
+            Add(m_Slider);
+            Add(m_FloatField);
         }
 
         public override void SetValueWithoutNotify(float newValue)
         {
             base.SetValueWithoutNotify(newValue);
-            floatField.SetValueWithoutNotify(newValue);
-            slider.SetValueWithoutNotify(newValue);
+            m_Slider.SetValueWithoutNotify(newValue);
+            m_FloatField.SetValueWithoutNotify(newValue);
         }
     }
 
-    public class EnumPopupField<T> : BaseField<int> where T : struct, Enum
+    public sealed class EnumPopupField<T> : BaseField<int> where T : struct, Enum
     {
-        internal string[] m_Choices;
-        protected TextElement m_TextElement;
+        string[] m_Choices;
+        TextElement m_TextElement;
 
         public override int value
         {
-            get { return base.value; }
+            get => base.value;
             set
             {
                 if (value < 0 || m_Choices.Length <= value)
-                {
                     throw new ArgumentException(string.Format("Value {0} is not present in the list of possible values", value));
-                }
                 base.value = value;
             }
         }
@@ -71,9 +68,7 @@ namespace MomomaAssets
         public override void SetValueWithoutNotify(int newValue)
         {
             if (newValue < 0 || m_Choices.Length <= newValue)
-            {
                 throw new ArgumentException(string.Format("Value {0} is not present in the list of possible values", newValue));
-            }
             base.SetValueWithoutNotify(newValue);
             m_TextElement.text = m_Choices[newValue];
         }
@@ -85,13 +80,10 @@ namespace MomomaAssets
                 Enum.TryParse<T>(m_Choices[value], out T result);
                 return result;
             }
-            set
-            {
-                this.value = Array.IndexOf(m_Choices, Enum.GetName(typeof(T), enumValue));
-            }
+            set => this.value = Array.IndexOf(m_Choices, Enum.GetName(typeof(T), enumValue));
         }
 
-        protected EnumPopupField()
+        EnumPopupField()
         {
             m_TextElement = new TextElement();
             m_TextElement.pickingMode = PickingMode.Ignore;

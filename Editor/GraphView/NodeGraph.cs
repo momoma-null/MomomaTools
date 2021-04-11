@@ -161,7 +161,7 @@ namespace MomomaAssets
             m_SearchWindowProvider = ScriptableObject.CreateInstance<SearchWindowProvider>();
             m_SearchWindowProvider.addGraphElement += AddElement;
             m_SearchWindowProvider.graphViewType = typeof(TGraphView);
-            m_GraphView.nodeCreationRequest = context => { if (m_GraphViewObjectHandler.GraphViewObject != null) SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), m_SearchWindowProvider); };
+            m_GraphView.nodeCreationRequest = CreateNode;
             m_CreateGraphButton = new VisualElement() { style = { positionType = PositionType.Absolute, flexDirection = FlexDirection.Row, justifyContent = Justify.Center } };
             m_GraphView.Insert(1, m_CreateGraphButton);
             m_CreateGraphButton.StretchToParentSize();
@@ -214,6 +214,12 @@ namespace MomomaAssets
             }
         }
 
+        void CreateNode(NodeCreationContext context)
+        {
+            if (m_GraphViewObjectHandler.GraphViewObject != null)
+                SearchWindow.Open(new SearchWindowContext(context.screenMousePosition), m_SearchWindowProvider);
+        }
+
         void CreateGraphObjectAsset()
         {
             if (m_GraphViewObjectHandler.GraphViewObject != null)
@@ -233,14 +239,11 @@ namespace MomomaAssets
                 AssetDatabase.StartAssetEditing();
                 m_GraphViewObjectHandler.CreateMainAsset(pathName);
                 m_GraphView.Initialize();
-                var initialiElements = m_GraphView.graphElements.ToList();
-                m_GraphView.DeleteElements(initialiElements);
                 m_GraphViewObjectHandler.Update();
-                foreach (var element in initialiElements)
+                foreach (var graphElement in m_GraphView.graphElements.ToList())
                 {
-                    var graphElementObject = element.Serialize<GraphElementObject>();
+                    var graphElementObject = CreateGraphElementObject(graphElement, true);
                     m_GraphViewObjectHandler.AddGraphElementObject(graphElementObject);
-                    graphElementObject.Deserialize(null, m_GraphView);
                 }
                 m_GraphViewObjectHandler.GraphViewTypeName = typeof(TGraphView).AssemblyQualifiedName;
                 m_GraphViewObjectHandler.ApplyModifiedPropertiesWithoutUndo();
@@ -264,9 +267,8 @@ namespace MomomaAssets
                 {
                     if (edge is IEdgeCallback edgeCallback)
                     {
-                        var graphElementObject = edge.Serialize<GraphElementObject>();
+                        var graphElementObject = CreateGraphElementObject(edge);
                         m_GraphViewObjectHandler.AddGraphElementObject(graphElementObject);
-                        Undo.RegisterCreatedObjectUndo(graphElementObject, $"Create {edge.GetType().Name}");
                         edgeCallback.onPortChanged -= OnPortChanged;
                         edgeCallback.onPortChanged += OnPortChanged;
                         m_GraphView.OnValueChanged(edge);
@@ -309,13 +311,16 @@ namespace MomomaAssets
         {
             var serializedGraphView = new SerializedGraphView();
             foreach (var element in elements)
-                serializedGraphView.SerializedGraphElements.Add(element.Serialize<SerializedGraphElement>(null));
+            {
+                var serializedGraphElement = new SerializedGraphElement();
+                element.Serialize(serializedGraphElement, m_GraphView);
+                serializedGraphView.SerializedGraphElements.Add(serializedGraphElement);
+            }
             return JsonUtility.ToJson(serializedGraphView);
         }
 
         void UnserializeAndPaste(string operationName, string data)
         {
-            m_GraphViewObjectHandler.Update();
             var serializedGraphElements = JsonUtility.FromJson<SerializedGraphView>(data).SerializedGraphElements;
             var guidsToReplace = new Dictionary<string, string>();
             foreach (var serializedGraphElement in serializedGraphElements)
@@ -364,9 +369,15 @@ namespace MomomaAssets
                 var graphElement = serializedGraphElement.Deserialize(null, m_GraphView);
                 graphElement.Query<GraphElement>().ForEach(e => guids[e.persistenceKey] = e);
             }
+            m_GraphViewObjectHandler.Update();
             foreach (var serializedGraphElement in serializedGraphElements)
             {
                 PostDeserialize(serializedGraphElement, guids);
+                if (guids.TryGetValue(serializedGraphElement.Guid, out var graphElement))
+                {
+                    var graphElementObject = CreateGraphElementObject(graphElement);
+                    m_GraphViewObjectHandler.AddGraphElementObject(graphElementObject);
+                }
             }
             m_GraphViewObjectHandler.ApplyModifiedProperties();
         }
@@ -382,10 +393,9 @@ namespace MomomaAssets
             var guids = m_GraphView.graphElements.ToList().ToDictionary(element => element.persistenceKey, element => element);
             foreach (var serializedGraphElement in serializedGraphElements)
             {
-                if (guids.TryGetValue(serializedGraphElement.Key, out var graphElement))
-                    graphElement = serializedGraphElement.Value.Deserialize(graphElement, m_GraphView);
-                else
-                    graphElement = serializedGraphElement.Value.Deserialize(null, m_GraphView);
+                GraphElement graphElement = null;
+                guids.TryGetValue(serializedGraphElement.Key, out graphElement);
+                graphElement = serializedGraphElement.Value.Deserialize(graphElement, m_GraphView);
                 graphElement.Query<GraphElement>().ForEach(e => guids[e.persistenceKey] = e);
             }
             foreach (var serializedGraphElement in serializedGraphElements)
@@ -446,6 +456,7 @@ namespace MomomaAssets
                 }
                 if (edge.output == null || edge.input == null)
                 {
+                    guids.Remove(edge.persistenceKey);
                     m_GraphView.RemoveElement(edge);
                     changed = true;
                 }
@@ -457,19 +468,27 @@ namespace MomomaAssets
         public void AddElement(GraphElement graphElement, Vector2 screenMousePosition)
         {
             if (graphElement == null)
-                throw new ArgumentNullException("graphElement");
+                throw new ArgumentNullException(nameof(graphElement));
             if (m_GraphView.Contains(graphElement))
                 throw new UnityException($"{m_GraphView} has already contained {graphElement}.");
-            var graphElementObject = graphElement.Serialize<GraphElementObject>();
+            m_GraphView.AddElement(graphElement);
             var position = Rect.zero;
             var root = m_EditorWindow.GetRootVisualContainer();
             position.center = m_GraphView.contentViewContainer.WorldToLocal(root.ChangeCoordinatesTo(root.parent ?? root, screenMousePosition - m_EditorWindow.position.position));
-            graphElementObject.Position = position;
+            graphElement.SetPosition(position);
+            var graphElementObject = CreateGraphElementObject(graphElement);
             m_GraphViewObjectHandler.Update();
             m_GraphViewObjectHandler.AddGraphElementObject(graphElementObject);
             m_GraphViewObjectHandler.ApplyModifiedProperties();
-            Undo.RegisterCreatedObjectUndo(graphElementObject, $"Create {graphElement.GetType().Name}");
-            graphElementObject.Deserialize(null, m_GraphView);
+        }
+
+        GraphElementObject CreateGraphElementObject(GraphElement graphElement, bool withoutUndo = false)
+        {
+            var graphElementObject = ScriptableObject.CreateInstance<GraphElementObject>();
+            graphElement.Serialize(graphElementObject, m_GraphView);
+            if (!withoutUndo)
+                Undo.RegisterCreatedObjectUndo(graphElementObject, $"Create {graphElement.GetType().Name}");
+            return graphElementObject;
         }
     }
 }
