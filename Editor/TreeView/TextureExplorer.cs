@@ -132,17 +132,17 @@ namespace MomomaAssets
             header.Add("Width", 50, item => item.width, TextAlignment.Right);
             header.Add("Height", 50, item => item.height, TextAlignment.Right);
             header.Add("Memory Size", 80, item => item.memorySize, TextAlignment.Right);
-            header.Add("Max Texture Size", 60, item => (MaxTextureSize)item.m_MaxTextureSize.intValue, (item, value) => item.m_MaxTextureSize.intValue = (int)value, item => item.m_MaxTextureSize);
-            header.Add("Texture Type", 80, item => (TextureImporterType)item.m_TextureType.intValue, (item, value) => item.m_TextureType.intValue = (int)value, item => item.m_TextureType);
+            header.Add<System.Enum>("Max Texture Size", 60, item => (MaxTextureSize)item.m_MaxTextureSize.intValue, (item, value) => item.m_MaxTextureSize.intValue = (int)(MaxTextureSize)value, item => item.m_MaxTextureSize);
+            header.Add<System.Enum>("Texture Type", 80, item => (TextureImporterType)item.m_TextureType.intValue, (item, value) => item.m_TextureType.intValue = (int)(TextureImporterType)value, item => item.m_TextureType);
             header.Add("sRGB", 50, item => Convert.ToBoolean(item.m_sRGBTexture.intValue), (item, value) => item.m_sRGBTexture.intValue = Convert.ToInt32(value), item => item.m_sRGBTexture, item => item.m_TextureType.intValue == 0);
-            header.Add("Alpha Source", 80, item => (TextureImporterAlphaSource)item.m_AlphaUsage.intValue, (item, value) => item.m_AlphaUsage.intValue = (int)value, item => item.m_AlphaUsage);
+            header.Add<System.Enum>("Alpha Source", 80, item => (TextureImporterAlphaSource)item.m_AlphaUsage.intValue, (item, value) => item.m_AlphaUsage.intValue = (int)(TextureImporterAlphaSource)value, item => item.m_AlphaUsage);
             header.Add("Transparency", 50, item => Convert.ToBoolean(item.m_AlphaUsage.intValue), (item, value) => item.m_AlphaIsTransparency.intValue = Convert.ToInt32(value), item => item.m_AlphaIsTransparency, item => item.m_AlphaUsage.intValue > 0);
             header.Add("Mip Map", 50, item => Convert.ToBoolean(item.m_EnableMipMap.intValue), (item, value) => item.m_EnableMipMap.intValue = Convert.ToInt32(value), item => item.m_EnableMipMap);
             header.Add("Preserve Coverage", 50, item => Convert.ToBoolean(item.m_MipMapsPreserveCoverage.intValue), (item, value) => item.m_MipMapsPreserveCoverage.intValue = Convert.ToInt32(value), item => item.m_MipMapsPreserveCoverage, item => item.m_EnableMipMap.intValue == 1);
-            header.Add("Alpha Cutoff Value", 60, item => item.m_AlphaTestReferenceValue, item => item.m_EnableMipMap.intValue == 1 && item.m_MipMapsPreserveCoverage.intValue == 1);
+            header.Add("Alpha Cutoff Value", 60, item => item.m_AlphaTestReferenceValue.floatValue, item => item.m_AlphaTestReferenceValue, item => item.m_EnableMipMap.intValue == 1 && item.m_MipMapsPreserveCoverage.intValue == 1);
             header.Add("Readable", 50, item => Convert.ToBoolean(item.m_IsReadable.intValue), (item, value) => item.m_IsReadable.intValue = Convert.ToInt32(value), item => item.m_IsReadable);
-            header.Add("Crunched Compression", 50, item => item.m_CrunchedCompression);
-            header.Add("Compression Quality", 60, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
+            header.Add("Crunched Compression", 50, item => item.m_CrunchedCompression.boolValue, item => item.m_CrunchedCompression);
+            header.Add("Compression Quality", 60, item => item.m_CompressionQuality.intValue, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
             m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }

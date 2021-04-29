@@ -146,14 +146,14 @@ namespace MomomaAssets
         {
             var header = new MultiColumnHeaderMaker<GameObjectTreeViewItem>();
             header.Add("Name", 200, item => item.displayName);
-            header.Add("Layer", 80, item => (LayerMask)item.m_Layer.intValue, (item, value) => item.m_Layer.intValue = (int)value, item => item.m_Layer);
-            header.Add("Lightmap", 50, item => item.LightmapStatic, (item, value) => item.LightmapStatic = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("Occluder", 50, item => item.OccluderStatic, (item, value) => item.OccluderStatic = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("Occludee", 50, item => item.OccludeeStatic, (item, value) => item.OccludeeStatic = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("Batching", 50, item => item.BatchingStatic, (item, value) => item.BatchingStatic = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("Navigation", 50, item => item.NavigationStatic, (item, value) => item.NavigationStatic = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = (bool)value, item => item.m_StaticEditorFlags);
-            header.Add("Reflection", 50, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = (bool)value, item => item.m_StaticEditorFlags);
+            header.Add<LayerMask>("Layer", 80, item => item.m_Layer.intValue, (item, value) => item.m_Layer.intValue = value, item => item.m_Layer);
+            header.Add("Lightmap", 50, item => item.LightmapStatic, (item, value) => item.LightmapStatic = value, item => item.m_StaticEditorFlags);
+            header.Add("Occluder", 50, item => item.OccluderStatic, (item, value) => item.OccluderStatic = value, item => item.m_StaticEditorFlags);
+            header.Add("Occludee", 50, item => item.OccludeeStatic, (item, value) => item.OccludeeStatic = value, item => item.m_StaticEditorFlags);
+            header.Add("Batching", 50, item => item.BatchingStatic, (item, value) => item.BatchingStatic = value, item => item.m_StaticEditorFlags);
+            header.Add("Navigation", 50, item => item.NavigationStatic, (item, value) => item.NavigationStatic = value, item => item.m_StaticEditorFlags);
+            header.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = value, item => item.m_StaticEditorFlags);
+            header.Add("Reflection", 50, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = value, item => item.m_StaticEditorFlags);
             m_TreeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
@@ -162,11 +162,11 @@ namespace MomomaAssets
         {
             var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
             header.Add("Name", 200, item => item.displayName);
-            header.Add("LightProbe", 80, item => (LightProbeUsage)item.m_LightProbeUsage.intValue, (item, value) => item.m_LightProbeUsage.intValue = (int)value, item => item.m_LightProbeUsage);
-            header.Add("ReflectionProbe", 80, item => (ReflectionProbeUsage)item.m_ReflectionProbeUsage.intValue, (item, value) => item.m_ReflectionProbeUsage.intValue = (int)value, item => item.m_ReflectionProbeUsage);
-            header.Add("ProbeAnchor", 80, item => item.m_ProbeAnchor);
-            header.Add("CastShadows", 60, item => item.m_CastShadows);
-            header.Add("ReceiveShadows", 50, item => item.m_ReceiveShadows);
+            header.Add<System.Enum>("LightProbe", 80, item => (LightProbeUsage)item.m_LightProbeUsage.intValue, (item, value) => item.m_LightProbeUsage.intValue = (int)(LightProbeUsage)value, item => item.m_LightProbeUsage);
+            header.Add<System.Enum>("ReflectionProbe", 80, item => (ReflectionProbeUsage)item.m_ReflectionProbeUsage.intValue, (item, value) => item.m_ReflectionProbeUsage.intValue = (int)(ReflectionProbeUsage)value, item => item.m_ReflectionProbeUsage);
+            header.Add("ProbeAnchor", 80, item => item.m_ProbeAnchor.objectReferenceValue, item => item.m_ProbeAnchor);
+            header.Add("CastShadows", 60, item => item.m_CastShadows.enumValueIndex, item => item.m_CastShadows);
+            header.Add("ReceiveShadows", 50, item => item.m_ReceiveShadows.boolValue, item => item.m_ReceiveShadows);
             m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
@@ -175,9 +175,9 @@ namespace MomomaAssets
         {
             var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
             header.Add("Name", 200, item => item.displayName);
-            header.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap);
-            header.Add("PrioritizeIllumination", 50, item => item.m_ImportantGI);
-            header.Add("StitchSeams", 50, item => item.m_StitchLightmapSeams);
+            header.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap.intValue, item => item.m_ScaleInLightmap);
+            header.Add("PrioritizeIllumination", 50, item => item.m_ImportantGI.boolValue, item => item.m_ImportantGI);
+            header.Add("StitchSeams", 50, item => item.m_StitchLightmapSeams.boolValue, item => item.m_StitchLightmapSeams);
             m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
@@ -348,7 +348,7 @@ namespace MomomaAssets
             }
         }
 
-        class MeshRendererTreeViewItem : UnityObjectTreeViewItem
+        sealed class MeshRendererTreeViewItem : UnityObjectTreeViewItem
         {
             override public SerializedObject serializedObject { get; }
 
