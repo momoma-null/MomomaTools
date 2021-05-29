@@ -240,13 +240,8 @@ namespace MomomaAssets
                     }
                 }
             }
-            var isModified = ModifiedItem != null && item.serializedObject.hasModifiedProperties;
-            if (canUndo)
-                item.serializedObject.ApplyModifiedProperties();
-            else
-                item.serializedObject.ApplyModifiedPropertiesWithoutUndo();
-            if (isModified)
-                ModifiedItem(item);
+            if (canUndo ? item.serializedObject.ApplyModifiedProperties() : item.serializedObject.ApplyModifiedPropertiesWithoutUndo())
+                ModifiedItem?.Invoke(item);
         }
 
         void CopyToSelection(int id, SerializedProperty sp)
@@ -261,14 +256,14 @@ namespace MomomaAssets
                         continue;
                     var so = r.serializedObject;
                     so.Update();
-                    so.CopyFromSerializedPropertyIfDifferent(sp);
-                    var isModified = ModifiedItem != null && so.hasModifiedProperties;
-                    if (canUndo)
-                        so.ApplyModifiedProperties();
-                    else
-                        so.ApplyModifiedPropertiesWithoutUndo();
-                    if (isModified)
-                        ModifiedItem(r);
+                    if (so.CopyFromSerializedPropertyIfDifferent(sp))
+                    {
+                        if (canUndo)
+                            so.ApplyModifiedProperties();
+                        else
+                            so.ApplyModifiedPropertiesWithoutUndo();
+                        ModifiedItem?.Invoke(r);
+                    }
                 }
             }
         }
