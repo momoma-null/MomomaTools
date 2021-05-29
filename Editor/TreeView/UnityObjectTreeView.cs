@@ -30,8 +30,8 @@ namespace MomomaAssets
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, TextAlignment fieldAlignment)
             => Add(name, width, getValue, null, null, null, fieldAlignment);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> GetProperty)
-            => Add(name, width, getValue, setValue, GetProperty, null, TextAlignment.Left);
+        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty)
+            => Add(name, width, getValue, setValue, getProperty, null, TextAlignment.Left);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible)
             => Add(name, width, getValue, setValue, getProperty, isVisible, TextAlignment.Left);
@@ -90,6 +90,8 @@ namespace MomomaAssets
             else
                 Comparison = (x, y) => Comparer<TValue>.Default.Compare(GetValue(x), GetValue(y));
         }
+
+        public string GetLabel(T item) => GetValue(item).ToString();
     }
 
     interface IMultiColumn<T> where T : UnityObjectTreeViewItem
@@ -99,6 +101,7 @@ namespace MomomaAssets
         Func<T, bool> IsVisible { get; }
         TextAnchor FieldAlignment { get; }
         Comparison<T> Comparison { get; }
+        string GetLabel(T item);
     }
 
     public abstract class UnityObjectTreeViewBase : TreeView
@@ -179,11 +182,8 @@ namespace MomomaAssets
 
                 if (column.GetProperty == null)
                 {
-                    if (column is MultiColumn<T, string> nameColumn)
-                    {
-                        labelStyle.alignment = column.FieldAlignment;
-                        EditorGUI.LabelField(rect, nameColumn.GetValue(item), labelStyle);
-                    }
+                    labelStyle.alignment = column.FieldAlignment;
+                    EditorGUI.LabelField(rect, column.GetLabel(item), labelStyle);
                 }
                 else
                 {
