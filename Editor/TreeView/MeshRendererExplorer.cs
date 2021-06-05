@@ -5,6 +5,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.Rendering;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
+using UnityEditor.Experimental.SceneManagement;
 
 namespace MomomaAssets
 {
@@ -194,26 +195,14 @@ namespace MomomaAssets
         ICollection<MeshRenderer> GetMeshRenderers(bool isLightmapStatic = false)
         {
             var meshRenderers = new HashSet<MeshRenderer>();
-            if (m_RootGameObject)
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            var rootObjs = new GameObject[] { prefabStage?.prefabContentsRoot ?? m_RootGameObject };
+            if (rootObjs[0] == null)
+                rootObjs = SceneManager.GetActiveScene().GetRootGameObjects();
+            foreach (var o in rootObjs)
             {
-                if (m_IncludeInactive || m_RootGameObject.activeInHierarchy)
-                {
-                    meshRenderers.UnionWith(m_RootGameObject.GetComponentsInChildren<MeshRenderer>());
-                }
-            }
-            else
-            {
-                var scene = SceneManager.GetActiveScene();
-                if (scene.IsValid())
-                {
-                    var rootObjs = scene.GetRootGameObjects();
-                    foreach (var rootObj in rootObjs)
-                    {
-                        if (m_IncludeInactive || rootObj.activeInHierarchy)
-                            meshRenderers.UnionWith(rootObj.GetComponentsInChildren<MeshRenderer>());
-                    }
-
-                }
+                if (m_IncludeInactive || o.activeInHierarchy)
+                    meshRenderers.UnionWith(o.GetComponentsInChildren<MeshRenderer>());
             }
             if (!m_IncludeInactive)
                 meshRenderers.RemoveWhere(mr => !mr.enabled);
