@@ -7,11 +7,18 @@ namespace MomomaAssets
     [InitializeOnLoad]
     sealed class FaceSnap
     {
+        enum PivotMode
+        {
+            Center, Origin
+        }
+
         const string k_PrefKey = "FaceSnap_Enabled";
+        const string k_PrefKeyPivotMode = "FaceSnap_PivotMode";
 
         static FaceSnap()
         {
-            s_Enabled = EditorPrefs.GetBool(k_PrefKey);
+            s_Enabled = EditorPrefs.GetBool(k_PrefKey, false);
+            s_PivotMode = (PivotMode)EditorPrefs.GetInt(k_PrefKeyPivotMode, 0);
             SceneView.onSceneGUIDelegate += OnSceneGUI;
             EditorApplication.update += Update;
             Selection.selectionChanged += OnSelectionChanged;
@@ -19,7 +26,8 @@ namespace MomomaAssets
 
         static readonly Dictionary<Transform, Bounds> s_BoundsCache = new Dictionary<Transform, Bounds>();
 
-        static bool s_Enabled = false;
+        static bool s_Enabled;
+        static PivotMode s_PivotMode;
 
         static void OnSceneGUI(SceneView sceneView)
         {
@@ -32,6 +40,10 @@ namespace MomomaAssets
                     s_Enabled = GUILayout.Toggle(s_Enabled, "Face snap", GUI.skin.button);
                     if (EditorGUI.EndChangeCheck())
                         EditorPrefs.SetBool(k_PrefKey, s_Enabled);
+                    EditorGUI.BeginChangeCheck();
+                    s_PivotMode = (PivotMode)EditorGUILayout.EnumPopup(s_PivotMode);
+                    if (EditorGUI.EndChangeCheck())
+                        EditorPrefs.SetInt(k_PrefKeyPivotMode, (int)s_PivotMode);
                     GUILayout.FlexibleSpace();
                 }
             }
@@ -56,32 +68,40 @@ namespace MomomaAssets
                 {
                     if (!t.hasChanged)
                         continue;
-                    if (!s_BoundsCache.TryGetValue(t, out var bounds))
+                    var results = new RaycastHit[1];
+                    var ray = new Ray() { direction = Vector3.down };
+                    switch (s_PivotMode)
                     {
-                        var renderers = t.GetComponentsInChildren<Renderer>(false);
-                        if (renderers.Length > 0)
-                        {
-                            bounds = new Bounds();
-                            foreach (var r in renderers)
+                        case PivotMode.Center:
+                            if (!s_BoundsCache.TryGetValue(t, out var bounds))
                             {
-                                if (bounds.extents == Vector3.zero)
+                                var renderers = t.GetComponentsInChildren<Renderer>(false);
+                                if (renderers.Length > 0)
                                 {
-                                    bounds = r.bounds;
-                                }
-                                else
-                                {
-                                    bounds.Encapsulate(r.bounds);
+                                    bounds = new Bounds();
+                                    foreach (var r in renderers)
+                                    {
+                                        if (bounds.extents == Vector3.zero)
+                                        {
+                                            bounds = r.bounds;
+                                        }
+                                        else
+                                        {
+                                            bounds.Encapsulate(r.bounds);
+                                        }
+                                    }
                                 }
                             }
-                        }
+                            ray.origin = bounds.center + (Physics.defaultContactOffset - bounds.extents.y) * Vector3.up;
+                            break;
+                        case PivotMode.Origin:
+                            ray.origin = t.position + Physics.defaultContactOffset * Vector3.up;
+                            break;
+                        default: throw new System.ArgumentOutOfRangeException(nameof(s_PivotMode));
                     }
-                    if (bounds.extents != Vector3.zero)
+                    if (Physics.RaycastNonAlloc(ray, results, 1f, Physics.AllLayers) > 0)
                     {
-                        var results = new RaycastHit[1];
-                        if (Physics.RaycastNonAlloc(bounds.center, Vector3.down, results, bounds.size.y * 2f, Physics.AllLayers) > 0)
-                        {
-                            t.position += results[0].point - bounds.extents.y * Vector3.down - bounds.center;
-                        }
+                        t.position += results[0].distance * Vector3.down;
                     }
                 }
             }
