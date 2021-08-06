@@ -5,6 +5,10 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEditor;
+#if UNITY_2019_1_OR_NEWER
+using UnityEngine.UIElements;
+using UnityEditor.UIElements;
+#endif
 
 namespace MomomaAssets
 {
@@ -66,6 +70,9 @@ namespace MomomaAssets
             {
                 s_NextArrow = EditorGUIUtility.TrIconContent("Profiler.NextFrame");
             }
+#if UNITY_2019_1_OR_NEWER
+            rootVisualElement.Add(new IMGUIContainer(OnGUIContainer) { style = { flexShrink = 0 } });
+#endif
         }
 
         void OnDisable()
@@ -74,7 +81,11 @@ namespace MomomaAssets
             Clear();
         }
 
+#if UNITY_2019_1_OR_NEWER
+        void OnGUIContainer()
+#else
         void OnGUI()
+#endif
         {
             var removingWindows = m_InspectorWindows.Where((win, i) => win != null && i != 0 && !(s_TrackerInfo.GetValue(win) as ActiveEditorTracker).isLocked).ToArray();
             foreach (var win in removingWindows)
@@ -171,7 +182,9 @@ namespace MomomaAssets
             using (var cellLayout = new EditorGUILayout.VerticalScope(GUILayout.Width(position.width)))
             {
                 var window = m_InspectorWindows[m_SelectedTabIndex];
+#if !UNITY_2019_1_OR_NEWER
                 s_actualViewInfo.SetValue(parent, window);
+#endif
                 if (Event.current.type == EventType.Repaint)
                 {
                     s_ParentInfo.SetValue(window, null);
@@ -182,6 +195,16 @@ namespace MomomaAssets
                     s_ParentInfo.SetValue(window, parent);
                 }
                 GetMethodInfo("OnGUI").Invoke(window, new object[] { });
+#if UNITY_2019_1_OR_NEWER
+                if (Event.current.type == EventType.Repaint)
+                    if (rootVisualElement.childCount < 2)
+                    {
+                        var container = window.rootVisualElement;
+                        rootVisualElement.Add(container);
+                        container.StretchToParentSize();
+                        container.style.top = rootVisualElement[0].localBound.height;
+                    }
+#endif
             }
         }
 
