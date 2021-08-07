@@ -83,14 +83,12 @@ namespace MomomaAssets.Extensions
 
         public static void AddEmptyArrayElement(this SerializedProperty sp)
         {
-            using (var eSO = new SerializedObject(sp.serializedObject.targetObject))
-            using (var eSP = eSO.FindProperty(sp.propertyPath))
-            {
-                eSP.arraySize = 0;
-                ++sp.arraySize;
-                eSP.arraySize = sp.arraySize;
-                sp.serializedObject.CopyFromSerializedProperty(eSP.GetArrayElementAtIndex(sp.arraySize - 1));
-            }
+            var size = sp.arraySize;
+            var eSP = new SerializedObject(sp.serializedObject.targetObject).FindProperty(sp.propertyPath);
+            eSP.arraySize = 0;
+            eSP.arraySize = size + 1;
+            sp.arraySize = size + 1;
+            sp.serializedObject.CopyFromSerializedProperty(eSP.GetArrayElementAtIndex(size));
         }
     }
 }// namespace

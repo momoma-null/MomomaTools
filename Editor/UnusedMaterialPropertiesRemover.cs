@@ -26,7 +26,6 @@ namespace MomomaAssets
                         RemoveProperties(savedProp.FindPropertyRelative("m_Floats"), mat);
                         RemoveProperties(savedProp.FindPropertyRelative("m_Colors"), mat);
                     }
-#if !UNITY_2019_1_OR_NEWER
                     if (mat.shader != null)
                     {
                         HashSet<string> variants;
@@ -105,7 +104,6 @@ namespace MomomaAssets
                             m_ShaderKeywords.stringValue = string.Join(" ", keywords);
                         }
                     }
-#endif
                     if (so.ApplyModifiedProperties())
                     {
                         Debug.Log("modify " + mat.name, mat);
