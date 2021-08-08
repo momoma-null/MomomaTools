@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -176,9 +176,12 @@ namespace MomomaAssets
         {
             var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
             header.Add("Name", 200, item => item.displayName);
-            header.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap.intValue, item => item.m_ScaleInLightmap);
+            header.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap.floatValue, item => item.m_ScaleInLightmap);
             header.Add("PrioritizeIllumination", 50, item => item.m_ImportantGI.boolValue, item => item.m_ImportantGI);
             header.Add("StitchSeams", 50, item => item.m_StitchLightmapSeams.boolValue, item => item.m_StitchLightmapSeams);
+#if UNITY_2019_1_OR_NEWER
+            header.Add<System.Enum>("Receive GI", 80, item => (ReceiveGI)item.m_ReceiveGI.intValue, (item, value) => item.m_ReceiveGI.intValue = (int)(ReceiveGI)value, item => item.m_ReceiveGI);
+#endif
             m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
@@ -349,6 +352,9 @@ namespace MomomaAssets
             readonly internal SerializedProperty m_ScaleInLightmap;
             readonly internal SerializedProperty m_ImportantGI;
             readonly internal SerializedProperty m_StitchLightmapSeams;
+#if UNITY_2019_1_OR_NEWER
+            readonly internal SerializedProperty m_ReceiveGI;
+#endif
 
             internal MeshRendererTreeViewItem(int id, MeshRenderer obj) : base(id)
             {
@@ -363,6 +369,9 @@ namespace MomomaAssets
                 m_ScaleInLightmap = serializedObject.FindProperty("m_ScaleInLightmap");
                 m_ImportantGI = serializedObject.FindProperty("m_ImportantGI");
                 m_StitchLightmapSeams = serializedObject.FindProperty("m_StitchLightmapSeams");
+#if UNITY_2019_1_OR_NEWER
+                m_ReceiveGI = serializedObject.FindProperty("m_ReceiveGI");
+#endif
             }
         }
     }
