@@ -207,7 +207,7 @@ namespace MomomaAssets
             if (!m_IncludeInactive)
                 meshRenderers.RemoveWhere(mr => !mr.enabled);
             if (isLightmapStatic)
-                meshRenderers.RemoveWhere(mr => !GameObjectUtility.AreStaticEditorFlagsSet(mr.gameObject, StaticEditorFlags.LightmapStatic));
+                meshRenderers.RemoveWhere(mr => !GameObjectUtility.AreStaticEditorFlagsSet(mr.gameObject, StaticEditorFlags.ContributeGI));
             return meshRenderers;
         }
 
@@ -273,8 +273,8 @@ namespace MomomaAssets
 
             internal bool LightmapStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.LightmapStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.LightmapStatic); }
+                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.ContributeGI); }
+                set { SetStaticFlag(value, (int)StaticEditorFlags.ContributeGI); }
             }
             internal bool OccluderStatic
             {

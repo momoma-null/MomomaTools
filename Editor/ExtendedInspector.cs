@@ -35,6 +35,9 @@ namespace MomomaAssets
         Vector2 m_ScrollPos;
         bool m_DoRebuild;
         object m_Parent;
+#if UNITY_2019_1_OR_NEWER
+        VisualElement m_ActiveContainer;
+#endif
 
         object parent => m_Parent ?? (m_Parent = s_ParentInfo.GetValue(this));
 
@@ -152,12 +155,13 @@ namespace MomomaAssets
                         m_ScrollPos.x = Math.Min(m_ScrollPos.x, scrollPosMax);
                     }
                 }
-                using (new EditorGUI.DisabledScope(Selection.objects == null || Selection.objects.Length == 0))
+                var selectedObjects = Selection.objects;
+                using (new EditorGUI.DisabledScope(selectedObjects == null || selectedObjects.Length == 0))
                 {
                     if (GUILayout.Button("+", EditorStyles.toolbarButton))
                     {
                         var newInspectorWindow = ScriptableObject.CreateInstance(s_InspectorWindowType) as EditorWindow;
-                        GetMethodInfo("SetObjectsLocked").Invoke(newInspectorWindow, new object[] { Selection.objects.ToList() });
+                        GetMethodInfo("SetObjectsLocked").Invoke(newInspectorWindow, new object[] { selectedObjects.ToList() });
                         s_ParentInfo.SetValue(newInspectorWindow, parent);
                         m_InspectorWindows.Add(newInspectorWindow);
                         m_SelectedTabIndex = m_InspectorWindows.Count - 1;
@@ -167,6 +171,7 @@ namespace MomomaAssets
                 {
                     if (GUILayout.Button("-", EditorStyles.toolbarButton))
                     {
+                        rootVisualElement.Remove(m_InspectorWindows[m_SelectedTabIndex].rootVisualElement);
                         DestroyImmediate(m_InspectorWindows[m_SelectedTabIndex]);
                         Repaint();
                         return;
@@ -197,12 +202,13 @@ namespace MomomaAssets
                 GetMethodInfo("OnGUI").Invoke(window, new object[] { });
 #if UNITY_2019_1_OR_NEWER
                 if (Event.current.type == EventType.Repaint)
-                    if (rootVisualElement.childCount < 2)
+                    if (m_ActiveContainer == null || m_ActiveContainer != window.rootVisualElement)
                     {
-                        var container = window.rootVisualElement;
-                        rootVisualElement.Add(container);
-                        container.StretchToParentSize();
-                        container.style.top = rootVisualElement[0].localBound.height;
+                        m_ActiveContainer?.RemoveFromHierarchy();
+                        m_ActiveContainer = window.rootVisualElement;
+                        rootVisualElement.Add(m_ActiveContainer);
+                        m_ActiveContainer.StretchToParentSize();
+                        m_ActiveContainer.style.top = rootVisualElement[0].localBound.height;
                     }
 #endif
             }
