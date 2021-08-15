@@ -19,7 +19,11 @@ namespace MomomaAssets
         {
             s_Enabled = EditorPrefs.GetBool(k_PrefKey, false);
             s_PivotMode = (PivotMode)EditorPrefs.GetInt(k_PrefKeyPivotMode, 0);
+#if UNITY_2019_1_OR_NEWER
+            SceneView.duringSceneGui += OnSceneGUI;
+#else
             SceneView.onSceneGUIDelegate += OnSceneGUI;
+#endif
             EditorApplication.update += Update;
             Selection.selectionChanged += OnSelectionChanged;
         }
