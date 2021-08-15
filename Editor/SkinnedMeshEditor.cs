@@ -376,6 +376,7 @@ namespace MomomaAssets
             var exportGO = rootObjCopy;
             exportGO.transform.position = Vector3.zero;
             exportGO.transform.rotation = Quaternion.identity;
+            var outMesh = new Mesh() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             try
             {
                 EditorUtility.DisplayProgressBar("Export Meshes", "Preparing.", 0);
@@ -497,14 +498,13 @@ namespace MomomaAssets
                         subCombine.Item1.mesh.bindposes = subCombine.Item2.Select(t => t.worldToLocalMatrix).ToArray();
                         subMeshCombines.Enqueue(subCombine.Item1);
                     }
-                    var subMesh = new Mesh();
+                    var subMesh = new Mesh() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
                     subMesh.CombineMeshes(subMeshCombines.ToArray(), true, false);
                     foreach (var c in subMeshCombines)
                         DestroyImmediate(c.mesh);
                     combineInstances[subMeshIndex].mesh = subMesh;
                     ++subMeshIndex;
                 }
-                var outMesh = new Mesh();
                 outMesh.MarkDynamic();
                 outMesh.CombineMeshes(combineInstances, false, false);
                 foreach (var c in combineInstances)
@@ -575,6 +575,7 @@ namespace MomomaAssets
             {
                 EditorUtility.ClearProgressBar();
                 DestroyImmediate(exportGO);
+                DestroyImmediate(outMesh);
                 ClearObjects();
                 InitializeObjects();
             }
@@ -604,24 +605,29 @@ namespace MomomaAssets
                 {
                     var indices = new List<int>();
                     srcMesh.GetTriangles(indices, i);
-                    var maxCount = indices.Count;
+                    var triangles = new List<Triangle>(indices.Count / 3);
+                    for (var j = 0; j < indices.Count; j += 3)
+                    {
+                        triangles.Add(new Triangle(indices[j], indices[j + 1], indices[j + 2], convertIndices));
+                    }
+                    var maxCount = triangles.Count;
                     try
                     {
-                        while (indices.Count > 0)
+                        while (triangles.Count > 0)
                         {
-                            EditorUtility.DisplayProgressBar("Converting...", srcMesh.name, 1f - 1f * indices.Count / maxCount);
-                            adjacentTriangles.Insert(0, new AdjacentTriangle(indices[0], indices[1], indices[2], convertIndices));
-                            indices.RemoveRange(0, 3);
+                            EditorUtility.DisplayProgressBar("Converting...", srcMesh.name, 1f - 1f * triangles.Count / maxCount);
+                            adjacentTriangles.Insert(0, new AdjacentTriangle(triangles[0]));
+                            triangles.RemoveAt(0);
                             bool again;
                             do
                             {
                                 again = false;
-                                for (var j = 0; j < indices.Count; j += 3)
+                                for (var j = 0; j < triangles.Count; ++j)
                                 {
-                                    if (adjacentTriangles[0].AddTriangle(indices[j], indices[j + 1], indices[j + 2]))
+                                    if (adjacentTriangles[0].AddTriangle(triangles[j]))
                                     {
-                                        indices.RemoveRange(j, 3);
-                                        j -= 3;
+                                        triangles.RemoveAt(j);
+                                        --j;
                                         again = true;
                                     }
                                 }
@@ -658,61 +664,72 @@ namespace MomomaAssets
                 UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform));
         }
 
-        class AdjacentTriangle
+        struct Edge : IEquatable<Edge>
         {
-            readonly HashSet<(int, int)> lines = new HashSet<(int, int)>();
-            readonly Queue<int> triangles = new Queue<int>();
-            readonly IList<int> convertIndices;
+            readonly (int, int) edge;
 
-            internal AdjacentTriangle(int index0, int index1, int index2, IList<int> convertIndices)
+            public Edge(int id1, int id2) => edge = id1 < id2 ? (id1, id2) : (id2, id1);
+
+            public bool Equals(Edge other) => edge.Equals(other.edge);
+            public override int GetHashCode() => edge.GetHashCode();
+        }
+
+        struct Triangle
+        {
+            public Edge[] Edges { get; }
+            public int[] Vertices { get; }
+
+            public Triangle(int id1, int id2, int id3, IReadOnlyList<int> indices)
             {
-                this.convertIndices = convertIndices;
-                lines.Add(GetLine(index0, index1));
-                lines.Add(GetLine(index1, index2));
-                lines.Add(GetLine(index2, index0));
-                triangles.Enqueue(index0);
-                triangles.Enqueue(index1);
-                triangles.Enqueue(index2);
+                Vertices = new[] { id1, id2, id3 };
+                id1 = indices[id1];
+                id2 = indices[id2];
+                id3 = indices[id3];
+                Edges = new[] { new Edge(id1, id2), new Edge(id2, id3), new Edge(id3, id1) };
+            }
+        }
+
+        sealed class AdjacentTriangle
+        {
+            readonly HashSet<Edge> edges;
+            readonly Queue<Triangle> triangles;
+
+            internal AdjacentTriangle(Triangle triangle)
+            {
+                edges = new HashSet<Edge>(triangle.Edges);
+                triangles = new Queue<Triangle>();
+                triangles.Enqueue(triangle);
             }
 
-            (int, int) GetLine(int i, int j)
+            internal bool AddTriangle(Triangle triangle)
             {
-                i = convertIndices[i];
-                j = convertIndices[j];
-                return i < j ? (i, j) : (j, i);
-            }
-
-            internal bool AddTriangle(int index0, int index1, int index2)
-            {
-                var newLines = new (int, int)[] { GetLine(index0, index1), GetLine(index1, index2), GetLine(index2, index0) };
-                if (lines.Remove(newLines[0]))
+                var newEdges = triangle.Edges;
+                if (edges.Remove(newEdges[0]))
                 {
-                    lines.Add(newLines[1]);
-                    lines.Add(newLines[2]);
+                    edges.Add(newEdges[1]);
+                    edges.Add(newEdges[2]);
                 }
-                else if (lines.Remove(newLines[1]))
+                else if (edges.Remove(newEdges[1]))
                 {
-                    lines.Add(newLines[0]);
-                    lines.Add(newLines[2]);
+                    edges.Add(newEdges[0]);
+                    edges.Add(newEdges[2]);
                 }
-                else if (lines.Remove(newLines[2]))
+                else if (edges.Remove(newEdges[2]))
                 {
-                    lines.Add(newLines[0]);
-                    lines.Add(newLines[1]);
+                    edges.Add(newEdges[0]);
+                    edges.Add(newEdges[1]);
                 }
                 else
                 {
                     return false;
                 }
-                triangles.Enqueue(index0);
-                triangles.Enqueue(index1);
-                triangles.Enqueue(index2);
+                triangles.Enqueue(triangle);
                 return true;
             }
 
             internal int[] GetTriangles()
             {
-                return triangles.ToArray();
+                return triangles.SelectMany(tri => tri.Vertices).ToArray();
             }
         }
     }
