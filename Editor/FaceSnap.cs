@@ -1,84 +1,46 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.EditorTools;
 
 namespace MomomaAssets
 {
-    [InitializeOnLoad]
-    sealed class FaceSnap
+    [EditorTool("MomomaTools/FaceSnap")]
+    sealed class FaceSnap : EditorTool
     {
-        enum PivotMode
-        {
-            Center, Origin
-        }
-
-        const string k_PrefKey = "FaceSnap_Enabled";
         const string k_PrefKeyPivotMode = "FaceSnap_PivotMode";
 
-        static FaceSnap()
-        {
-            s_Enabled = EditorPrefs.GetBool(k_PrefKey, false);
-            s_PivotMode = (PivotMode)EditorPrefs.GetInt(k_PrefKeyPivotMode, 0);
-#if UNITY_2019_1_OR_NEWER
-            SceneView.duringSceneGui += OnSceneGUI;
-#else
-            SceneView.onSceneGUIDelegate += OnSceneGUI;
-#endif
-            EditorApplication.update += Update;
-            Selection.selectionChanged += OnSelectionChanged;
-        }
-
-        static readonly Dictionary<Transform, Bounds> s_BoundsCache = new Dictionary<Transform, Bounds>();
-
-        static bool s_Enabled;
         static PivotMode s_PivotMode;
 
-        static void OnSceneGUI(SceneView sceneView)
+        RaycastHit[] m_Results = new RaycastHit[1];
+
+        void OnEnable()
         {
-            try
-            {
-                Handles.BeginGUI();
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    EditorGUI.BeginChangeCheck();
-                    s_Enabled = GUILayout.Toggle(s_Enabled, "Face snap", GUI.skin.button);
-                    if (EditorGUI.EndChangeCheck())
-                        EditorPrefs.SetBool(k_PrefKey, s_Enabled);
-                    EditorGUI.BeginChangeCheck();
-                    s_PivotMode = (PivotMode)EditorGUILayout.EnumPopup(s_PivotMode);
-                    if (EditorGUI.EndChangeCheck())
-                        EditorPrefs.SetInt(k_PrefKeyPivotMode, (int)s_PivotMode);
-                    GUILayout.FlexibleSpace();
-                }
-            }
-            finally
-            {
-                Handles.EndGUI();
-            }
+            s_PivotMode = (PivotMode)EditorPrefs.GetInt(k_PrefKeyPivotMode, 0);
         }
 
-        static void OnSelectionChanged()
+        public override void OnToolGUI(EditorWindow window)
         {
-            s_BoundsCache.Clear();
-        }
-
-        static void Update()
-        {
-            if (!s_Enabled)
-                return;
-            if (Selection.transforms != null && Selection.transforms.Length > 0)
+            var currentPosition = Tools.handlePosition;
+            var size = 0.15f * HandleUtility.GetHandleSize(currentPosition);
+            EditorGUI.BeginChangeCheck();
+            var position = Handles.FreeMoveHandle(currentPosition, Tools.handleRotation, size, Vector3.zero, Handles.RectangleHandleCap);
+            if (EditorGUI.EndChangeCheck())
             {
+                var delta = position - currentPosition;
+                Undo.RecordObjects(Selection.transforms, "Move Objects");
+                var ray = HandleUtility.GUIPointToWorldRay(HandleUtility.WorldToGUIPoint(position));
                 foreach (var t in Selection.transforms)
                 {
-                    if (!t.hasChanged)
-                        continue;
-                    var results = new RaycastHit[1];
-                    var ray = new Ray() { direction = Vector3.down };
-                    switch (s_PivotMode)
+                    switch (Tools.pivotMode)
                     {
                         case PivotMode.Center:
-                            if (!s_BoundsCache.TryGetValue(t, out var bounds))
+                            var bounds = new Bounds();
+                            var rot = t.rotation;
+                            try
                             {
+                                t.rotation = Quaternion.identity;
+                                t.position += delta;
                                 var renderers = t.GetComponentsInChildren<Renderer>(false);
                                 if (renderers.Length > 0)
                                 {
@@ -95,20 +57,53 @@ namespace MomomaAssets
                                         }
                                     }
                                 }
+                                bounds.center = t.position + rot * (bounds.center - t.position);
                             }
-                            ray.origin = bounds.center + (Physics.defaultContactOffset - bounds.extents.y) * Vector3.up;
+                            finally
+                            {
+                                t.rotation = rot;
+                            }
+                            ray.origin = bounds.center - Vector3.Project(bounds.center - ray.origin, ray.direction);
+                            if (Physics.BoxCastNonAlloc(ray.origin, bounds.extents, ray.direction, m_Results, rot, Mathf.Infinity, Physics.AllLayers) > 0)
+                            {
+                                var invR = Quaternion.Inverse(rot);
+                                var ro = invR * (m_Results[0].point - bounds.center);
+                                var rd = invR * -ray.direction;
+                                var tx = -ro.x / rd.x - bounds.extents.x / Mathf.Abs(rd.x);
+                                var ty = -ro.y / rd.y - bounds.extents.y / Mathf.Abs(rd.y);
+                                var tz = -ro.z / rd.z - bounds.extents.z / Mathf.Abs(rd.z);
+                                var tN = Mathf.Max(tx, ty, tz);
+                                t.position += ray.direction * tN;
+                                t.rotation = AlignToNormal(rot, m_Results[0].normal);
+                            }
                             break;
-                        case PivotMode.Origin:
-                            ray.origin = t.position + Physics.defaultContactOffset * Vector3.up;
+                        case PivotMode.Pivot:
+                            if (Physics.RaycastNonAlloc(ray, m_Results, Mathf.Infinity, Physics.AllLayers) > 0)
+                            {
+                                t.position = m_Results[0].point;
+                                t.rotation = AlignToNormal(t.rotation, m_Results[0].normal);
+                            }
                             break;
-                        default: throw new System.ArgumentOutOfRangeException(nameof(s_PivotMode));
-                    }
-                    if (Physics.RaycastNonAlloc(ray, results, 1f, Physics.AllLayers) > 0)
-                    {
-                        t.position += results[0].distance * Vector3.down;
                     }
                 }
             }
+        }
+
+        static Quaternion AlignToNormal(Quaternion rotation, Vector3 normal)
+        {
+            var localDir = Quaternion.Inverse(rotation) * normal;
+            var absX = Mathf.Abs(localDir.x);
+            var absY = Mathf.Abs(localDir.y);
+            var absZ = Mathf.Abs(localDir.z);
+            var tNorm = Vector3.zero;
+            if (absX > absY && absX > absZ)
+                tNorm.x = Mathf.Sign(localDir.x);
+            else if (absY > absZ)
+                tNorm.y = Mathf.Sign(localDir.y);
+            else
+                tNorm.z = Mathf.Sign(localDir.z);
+            tNorm = rotation * tNorm;
+            return Quaternion.FromToRotation(tNorm, normal) * rotation;
         }
     }
 }
