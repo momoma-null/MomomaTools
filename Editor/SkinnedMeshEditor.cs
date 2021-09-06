@@ -266,11 +266,20 @@ namespace MomomaAssets
                                 size.x = Math.Abs(size.x * 0.5f);
                                 size.y = Math.Abs(size.y * 0.5f);
                                 size.z = 10f;
+#if UNITY_2019_4_OR_NEWER
+                                var cols = new Collider[renderGOs.Count];
+                                var count = physicsScene.OverlapBox(position, size, cols, rotation, Physics.AllLayers, QueryTriggerInteraction.UseGlobal);
+                                if (count > 0)
+                                {
+                                    PushInactiveGO(cols.Take(count).Select(c => c.gameObject));
+                                }
+#else
                                 var cols = s_OverlapBoxMethodInfo.Invoke(null, new object[] { physicsScene, position, size, rotation, Physics.AllLayers, QueryTriggerInteraction.UseGlobal }) as Collider[];
                                 if (cols.Length > 0)
                                 {
                                     PushInactiveGO(cols.Select(c => c.gameObject));
                                 }
+#endif
                             }
                         }
                         catch
@@ -381,27 +390,24 @@ namespace MomomaAssets
             {
                 EditorUtility.DisplayProgressBar("Export Meshes", "Preparing.", 0);
                 float max;
-                var skinnedMRs = renderGOs.Select(go => go.GetComponent<SkinnedMeshRenderer>());
+                var skinnedMRs = renderGOs.Select(go => go.GetComponent<SkinnedMeshRenderer>()).ToArray();
                 var allBones = new HashSet<Transform>();
                 var combinedBones = new List<Transform>();
                 var rootBones = new HashSet<Transform>();
                 var blendShapeDict = new Dictionary<string, List<CombineInstance>>();
                 var materials = new HashSet<Material>();
-                var materialGropu = skinnedMRs.GroupBy(r => r.sharedMaterial);
-                foreach (var mMeshes in materialGropu)
+                foreach (var r in skinnedMRs)
                 {
-                    foreach (var r in mMeshes)
+                    for (var i = 0; i < r.sharedMesh.blendShapeCount; ++i)
                     {
-                        for (var i = 0; i < r.sharedMesh.blendShapeCount; ++i)
-                        {
-                            r.SetBlendShapeWeight(i, 0f);
-                            var blendShapeName = r.sharedMesh.GetBlendShapeName(i);
-                            if (!blendShapeDict.ContainsKey(blendShapeName))
-                                blendShapeDict.Add(blendShapeName, new List<CombineInstance>());
-                        }
+                        r.SetBlendShapeWeight(i, 0f);
+                        var blendShapeName = r.sharedMesh.GetBlendShapeName(i);
+                        if (!blendShapeDict.ContainsKey(blendShapeName))
+                            blendShapeDict.Add(blendShapeName, new List<CombineInstance>());
                     }
                 }
                 var combines = new List<(CombineInstance, Transform[])[]>();
+                var materialGropu = skinnedMRs.GroupBy(r => r.sharedMaterial);
                 foreach (var mMeshes in materialGropu)
                 {
                     var meshCount = mMeshes.Count();
@@ -415,14 +421,15 @@ namespace MomomaAssets
                     {
                         EditorUtility.DisplayProgressBar("Export Meshes", "Making combine instances.", smCombineIndex / max);
                         var srcMesh = r.sharedMesh;
-                        allBones.UnionWith(r.bones);
-                        combinedBones.AddRange(r.bones);
-                        rootBones.Add(r.bones[0]);
+                        var srcBones = r.bones;
+                        allBones.UnionWith(srcBones);
+                        combinedBones.AddRange(srcBones);
+                        rootBones.Add(srcBones[0]);
                         var srcBakedMesh = new Mesh();
                         r.BakeMesh(srcBakedMesh);
                         srcBakedMesh.boneWeights = srcMesh.boneWeights;
                         subMeshCombines[smCombineIndex].Item1.mesh = srcBakedMesh;
-                        subMeshCombines[smCombineIndex].Item2 = r.bones;
+                        subMeshCombines[smCombineIndex].Item2 = srcBones;
                         foreach (var key in blendShapeDict.Keys)
                         {
                             Mesh bsMesh;
@@ -489,45 +496,71 @@ namespace MomomaAssets
                         t.parent = parentQueue.Dequeue();
                 }
                 var combineInstances = new CombineInstance[combines.Count];
-                var subMeshIndex = 0;
-                foreach (var combine in combines)
+                try
                 {
-                    var subMeshCombines = new Queue<CombineInstance>();
-                    foreach (var subCombine in combine)
+                    var subMeshIndex = 0;
+                    foreach (var combine in combines)
                     {
-                        subCombine.Item1.mesh.bindposes = subCombine.Item2.Select(t => t.worldToLocalMatrix).ToArray();
-                        subMeshCombines.Enqueue(subCombine.Item1);
+                        var subMeshCombines = new CombineInstance[combine.Length];
+                        for (var i = 0; i < combine.Length; ++i)
+                        {
+                            combine[i].Item1.mesh.bindposes = Array.ConvertAll(combine[i].Item2, t => t.worldToLocalMatrix);
+                            subMeshCombines[i] = combine[i].Item1;
+                        }
+                        var subMesh = new Mesh() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                        try
+                        {
+                            subMesh.CombineMeshes(subMeshCombines, true, false);
+                        }
+                        finally
+                        {
+                            foreach (var c in subMeshCombines)
+                                DestroyImmediate(c.mesh);
+                        }
+                        combineInstances[subMeshIndex].mesh = subMesh;
+                        ++subMeshIndex;
                     }
-                    var subMesh = new Mesh() { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-                    subMesh.CombineMeshes(subMeshCombines.ToArray(), true, false);
-                    foreach (var c in subMeshCombines)
-                        DestroyImmediate(c.mesh);
-                    combineInstances[subMeshIndex].mesh = subMesh;
-                    ++subMeshIndex;
+                    outMesh.MarkDynamic();
+                    outMesh.CombineMeshes(combineInstances, false, false);
                 }
-                outMesh.MarkDynamic();
-                outMesh.CombineMeshes(combineInstances, false, false);
-                foreach (var c in combineInstances)
-                    DestroyImmediate(c.mesh);
+                finally
+                {
+                    foreach (var c in combineInstances)
+                        DestroyImmediate(c.mesh);
+                }
                 var outVertices = outMesh.vertices;
-                max = blendShapeDict.Keys.Count();
+                var outNormals = outMesh.normals;
+                for (var i = 0; i < outNormals.Length; ++i)
+                    outNormals[i] = outNormals[i].normalized;
+                max = blendShapeDict.Count;
                 var keyIndex = 0;
                 var vertexCount = outMesh.vertexCount;
-                foreach (var key in blendShapeDict.Keys)
+                var deltaVertices = new Vector3[vertexCount];
+                var deltaNormals = new Vector3[vertexCount];
+                var deltaTangents = new Vector3[vertexCount];
+                foreach (var pair in blendShapeDict)
                 {
                     EditorUtility.DisplayProgressBar("Export Meshes", "Caliculating blend shapes.", keyIndex / max);
-                    var bsCombines = blendShapeDict[key];
+                    var bsCombines = pair.Value;
                     var bsMesh = new Mesh();
-                    bsMesh.CombineMeshes(bsCombines.ToArray(), false, false);
-                    foreach (var c in bsCombines)
-                        DestroyImmediate(c.mesh);
-                    var deltaVertices = new Vector3[vertexCount];
-                    var deltaNormals = new Vector3[vertexCount];
-                    var deltaTangents = new Vector3[vertexCount];
-                    var bsVertices = bsMesh.vertices;
-                    deltaVertices = deltaVertices.Select((v, i) => bsVertices[i] - outVertices[i]).ToArray();
-                    outMesh.AddBlendShapeFrame(key, 100, deltaVertices, deltaNormals, deltaTangents);
-                    DestroyImmediate(bsMesh);
+                    try
+                    {
+                        bsMesh.CombineMeshes(bsCombines.ToArray(), false, false);
+                        foreach (var c in bsCombines)
+                            DestroyImmediate(c.mesh);
+                        var bsVertices = bsMesh.vertices;
+                        var bsNormals = bsMesh.normals;
+                        for (var i = 0; i < vertexCount; ++i)
+                        {
+                            deltaVertices[i] = bsVertices[i] - outVertices[i];
+                            deltaNormals[i] = bsNormals[i].normalized - outNormals[i];
+                        }
+                        outMesh.AddBlendShapeFrame(pair.Key, 100, deltaVertices, deltaNormals, deltaTangents);
+                    }
+                    finally
+                    {
+                        DestroyImmediate(bsMesh);
+                    }
                     ++keyIndex;
                 }
                 EditorUtility.DisplayProgressBar("Export Meshes", "Normalizing the Mesh data.", 0f);
@@ -539,16 +572,16 @@ namespace MomomaAssets
                     orderedBonesDict[t] = boneIndex;
                     ++boneIndex;
                 }
-                outMesh.boneWeights = outMesh.boneWeights.Select(weight =>
-                {
-                    if (weight.boneIndex0 > -1) weight.boneIndex0 = orderedBonesDict[combinedBones[weight.boneIndex0]];
-                    if (weight.boneIndex1 > -1) weight.boneIndex1 = orderedBonesDict[combinedBones[weight.boneIndex1]];
-                    if (weight.boneIndex2 > -1) weight.boneIndex2 = orderedBonesDict[combinedBones[weight.boneIndex2]];
-                    if (weight.boneIndex3 > -1) weight.boneIndex3 = orderedBonesDict[combinedBones[weight.boneIndex3]];
-                    return weight;
-                }).ToArray();
-                outMesh.bindposes = orderedBones.Select(t => t.worldToLocalMatrix).ToArray();
-                outMesh.normals = outMesh.normals.Select(n => n.normalized).ToArray();
+                outMesh.boneWeights = Array.ConvertAll(outMesh.boneWeights, weight =>
+                 {
+                     if (weight.boneIndex0 > -1) weight.boneIndex0 = orderedBonesDict[combinedBones[weight.boneIndex0]];
+                     if (weight.boneIndex1 > -1) weight.boneIndex1 = orderedBonesDict[combinedBones[weight.boneIndex1]];
+                     if (weight.boneIndex2 > -1) weight.boneIndex2 = orderedBonesDict[combinedBones[weight.boneIndex2]];
+                     if (weight.boneIndex3 > -1) weight.boneIndex3 = orderedBonesDict[combinedBones[weight.boneIndex3]];
+                     return weight;
+                 });
+                outMesh.bindposes = Array.ConvertAll(orderedBones, t => t.worldToLocalMatrix);
+                outMesh.normals = outNormals;
                 MeshUtility.Optimize(outMesh);
                 var newMeshGO = new GameObject("body");
                 var newSkinned = newMeshGO.AddComponent<SkinnedMeshRenderer>();
@@ -560,6 +593,7 @@ namespace MomomaAssets
                 var settings = ExportModelSettingsSerializeType.GetConstructor(new Type[] { }).Invoke(new object[] { });
                 var fieldInfo = ExportModelSettingsSerializeType.BaseType.GetField("exportFormat", BindingFlags.Instance | BindingFlags.NonPublic);
                 fieldInfo.SetValue(settings, Enum.ToObject(fieldInfo.FieldType, 1));
+                ExportModelSettingsSerializeType.BaseType.GetField("mayaCompatibleNaming", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(settings, false);
                 ModelExporterType.GetMethod("ExportObject", BindingFlags.Static | BindingFlags.NonPublic, null, new Type[] { typeof(string), typeof(UnityEngine.Object), ExportModelSettingsSerializeType.GetInterface("IExportOptions") }, null).Invoke(null, new object[] { path, exportGO, settings });
                 var importer = AssetImporter.GetAtPath(path) as ModelImporter;
                 foreach (var m in materials)
@@ -589,53 +623,75 @@ namespace MomomaAssets
             rootObjCopy.transform.rotation = Quaternion.identity;
             bounds = new Bounds();
             foreach (var skinned in skinnedMRs)
-                bounds.Encapsulate(skinned.bounds);
+                if (bounds.size == Vector3.zero)
+                    bounds = skinned.bounds;
+                else
+                    bounds.Encapsulate(skinned.bounds);
             rootObjCopy.transform.position = -bounds.center;
             bounds.center = Vector3.zero;
             previewRender.AddSingleGO(rootObjCopy);
+            var adjacentTriangles = new HashSet<AdjacentTriangle>();
+            var indices = new List<int>();
+            var triangles = new HashSet<Triangle>();
             foreach (var skinned in skinnedMRs)
             {
-                var adjacentTriangles = new List<AdjacentTriangle>();
                 var srcMesh = skinned.sharedMesh;
+                var meshName = srcMesh.name;
                 var srcVertices = srcMesh.vertices;
-                var length = srcVertices.Length;
                 var vertexIDs = new Dictionary<Vector3, int>();
-                var convertIndices = srcVertices.Select((v, i) => vertexIDs.ContainsKey(v) ? vertexIDs[v] : vertexIDs[v] = i).ToArray();
+                var convertIndices = new int[srcVertices.Length];
+                for (var i = 0; i < srcVertices.Length; ++i)
+                    if (vertexIDs.TryGetValue(srcVertices[i], out var index))
+                        convertIndices[i] = index;
+                    else
+                        convertIndices[i] = (vertexIDs[srcVertices[i]] = i);
                 for (var i = 0; i < srcMesh.subMeshCount; ++i)
                 {
-                    var indices = new List<int>();
+                    indices.Clear();
                     srcMesh.GetTriangles(indices, i);
-                    var triangles = new List<Triangle>(indices.Count / 3);
+                    triangles.Clear();
                     for (var j = 0; j < indices.Count; j += 3)
                     {
-                        triangles.Add(new Triangle(indices[j], indices[j + 1], indices[j + 2], convertIndices));
+                        triangles.Add(new Triangle(indices[j], indices[j + 1], indices[j + 2]));
                     }
-                    var maxCount = triangles.Count;
                     try
                     {
+                        adjacentTriangles.Clear();
+                        var maxCount = triangles.Count;
                         while (triangles.Count > 0)
                         {
-                            EditorUtility.DisplayProgressBar("Converting...", srcMesh.name, 1f - 1f * triangles.Count / maxCount);
-                            adjacentTriangles.Insert(0, new AdjacentTriangle(triangles[0]));
-                            triangles.RemoveAt(0);
-                            bool again;
-                            do
+                            EditorUtility.DisplayProgressBar("Converting...", meshName, 1f - 1f * triangles.Count / maxCount);
+                            var triangle = triangles.First();
+                            triangles.Remove(triangle);
+                            var adjacentTriangle = new AdjacentTriangle(triangle);
+                            adjacentTriangles.Add(adjacentTriangle);
+                            while (true)
                             {
-                                again = false;
-                                for (var j = 0; j < triangles.Count; ++j)
-                                {
-                                    if (adjacentTriangles[0].AddTriangle(triangles[j]))
-                                    {
-                                        triangles.RemoveAt(j);
-                                        --j;
-                                        again = true;
-                                    }
-                                }
+                                if (triangles.RemoveWhere(j => adjacentTriangle.AddTriangle(j)) == 0)
+                                    break;
                             }
-                            while (again);
+                        }
+                        foreach (var j in adjacentTriangles)
+                            j.ConvertIndices(convertIndices);
+                        var convertedAdjacentTriangles = new Queue<AdjacentTriangle>(adjacentTriangles.Count);
+                        maxCount = adjacentTriangles.Count;
+                        while (adjacentTriangles.Count > 0)
+                        {
+                            EditorUtility.DisplayProgressBar("Converting...", meshName, 1f - 1f * adjacentTriangles.Count / maxCount);
+                            var adjacentTriangle = adjacentTriangles.First();
+                            adjacentTriangles.Remove(adjacentTriangle);
+                            convertedAdjacentTriangles.Enqueue(adjacentTriangle);
+                            while (true)
+                            {
+                                if (adjacentTriangles.RemoveWhere(j => adjacentTriangle.AddAdjacentTriangle(j)) == 0)
+                                    break;
+                            }
+                        }
+                        foreach (var j in convertedAdjacentTriangles)
+                        {
                             var mesh = Instantiate(srcMesh);
                             mesh.hideFlags = HideFlags.HideAndDontSave;
-                            mesh.triangles = adjacentTriangles[0].GetTriangles();
+                            mesh.triangles = j.GetTriangles();
                             var renderGO = new GameObject();
                             renderGO.hideFlags = HideFlags.DontSave;
                             var newSkinned = renderGO.AddComponent<SkinnedMeshRenderer>();
@@ -664,27 +720,53 @@ namespace MomomaAssets
                 UnityEditorInternal.ComponentUtility.DestroyComponentsMatching(t.gameObject, c => !(c is Transform));
         }
 
-        struct Edge : IEquatable<Edge>
+        sealed class Edge : IEquatable<Edge>
         {
-            readonly (int, int) edge;
+            int id1;
+            int id2;
 
-            public Edge(int id1, int id2) => edge = id1 < id2 ? (id1, id2) : (id2, id1);
+            public Edge(int id1, int id2)
+            {
+                if (id1 < id2)
+                {
+                    this.id1 = id1;
+                    this.id2 = id2;
+                }
+                else
+                {
+                    this.id1 = id2;
+                    this.id2 = id1;
+                }
+            }
 
-            public bool Equals(Edge other) => edge.Equals(other.edge);
-            public override int GetHashCode() => edge.GetHashCode();
+            public void ConvertIndices(IReadOnlyList<int> indices)
+            {
+                var new1 = indices[id1];
+                var new2 = indices[id2];
+                if (new1 < new2)
+                {
+                    id1 = new1;
+                    id2 = new2;
+                }
+                else
+                {
+                    id1 = new2;
+                    id2 = new1;
+                }
+            }
+
+            public bool Equals(Edge other) => id1.Equals(other.id1) && id2.Equals(other.id2);
+            public override int GetHashCode() => id1 ^ id2;
         }
 
-        struct Triangle
+        sealed class Triangle
         {
             public Edge[] Edges { get; }
             public int[] Vertices { get; }
 
-            public Triangle(int id1, int id2, int id3, IReadOnlyList<int> indices)
+            public Triangle(int id1, int id2, int id3)
             {
                 Vertices = new[] { id1, id2, id3 };
-                id1 = indices[id1];
-                id2 = indices[id2];
-                id3 = indices[id3];
                 Edges = new[] { new Edge(id1, id2), new Edge(id2, id3), new Edge(id3, id1) };
             }
         }
@@ -692,16 +774,15 @@ namespace MomomaAssets
         sealed class AdjacentTriangle
         {
             readonly HashSet<Edge> edges;
-            readonly Queue<Triangle> triangles;
+            readonly Queue<int> vertices;
 
-            internal AdjacentTriangle(Triangle triangle)
+            public AdjacentTriangle(Triangle triangle)
             {
                 edges = new HashSet<Edge>(triangle.Edges);
-                triangles = new Queue<Triangle>();
-                triangles.Enqueue(triangle);
+                vertices = new Queue<int>(triangle.Vertices);
             }
 
-            internal bool AddTriangle(Triangle triangle)
+            public bool AddTriangle(Triangle triangle)
             {
                 var newEdges = triangle.Edges;
                 if (edges.Remove(newEdges[0]))
@@ -723,13 +804,30 @@ namespace MomomaAssets
                 {
                     return false;
                 }
-                triangles.Enqueue(triangle);
+                foreach (var i in triangle.Vertices)
+                    vertices.Enqueue(i);
                 return true;
             }
 
-            internal int[] GetTriangles()
+            public void ConvertIndices(IReadOnlyList<int> indices)
             {
-                return triangles.SelectMany(tri => tri.Vertices).ToArray();
+                foreach (var i in edges)
+                    i.ConvertIndices(indices);
+            }
+
+            public bool AddAdjacentTriangle(AdjacentTriangle adjacentTriangle)
+            {
+                if (!edges.Overlaps(adjacentTriangle.edges))
+                    return false;
+                edges.UnionWith(adjacentTriangle.edges);
+                foreach (var i in adjacentTriangle.vertices)
+                    vertices.Enqueue(i);
+                return true;
+            }
+
+            public int[] GetTriangles()
+            {
+                return vertices.ToArray();
             }
         }
     }
