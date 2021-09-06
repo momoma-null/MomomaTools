@@ -1,4 +1,5 @@
 ﻿#if UNITY_EDITOR
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,6 +22,8 @@ namespace MomomaAssets
         GameObject[] m_MeshObjects = new GameObject[0];
         [SerializeField]
         float m_Catenary = 10f;
+        [SerializeField]
+        Gradient m_Gradient = new Gradient();
 
         void ISerializationCallbackReceiver.OnAfterDeserialize()
         {
@@ -78,6 +81,12 @@ namespace MomomaAssets
             {
                 DestroyAllCurves();
                 var bounds = sourceMesh.bounds;
+                var srcVetices = sourceMesh.vertices;
+                var srcNormals = sourceMesh.normals;
+                var srcColors = sourceMesh.colors32;
+                srcColors = srcColors != null && srcColors.Length == srcVetices.Length ? srcColors : new Color32[srcVetices.Length];
+                var dstVertices = new Vector3[srcVetices.Length];
+                var dstNormals = new Vector3[srcVetices.Length];
                 var unitLength = 0f;
                 switch (m_Axis)
                 {
@@ -95,22 +104,38 @@ namespace MomomaAssets
                     var endPos = m_Anchors[i + 1].position;
                     var curve = new CatenaryCurve(startPos, endPos, m_Catenary, unitLength);
                     var combines = new List<CombineInstance>();
-                    foreach (var line in curve)
+                    var rotate = Quaternion.identity;
+                    switch (m_Axis)
                     {
-                        var scale = (line.to - line.from).magnitude / unitLength;
-                        var matrix = Matrix4x4.LookAt((line.from + line.to) * 0.5f, line.to, Vector3.up) * Matrix4x4.Scale(Vector3.one + Vector3.forward * (scale - 1f));
-                        switch (m_Axis)
+                        case Axis.X: rotate *= Quaternion.Euler(0, 90f, 0); break;
+                        case Axis.Y: rotate *= Quaternion.Euler(90f, 0, 0); break;
+                    }
+                    var time = 0f;
+                    foreach (var convert in curve)
+                    {
+                        var mulColor = Color.white - m_Gradient.Evaluate(time);
+                        var curveMesh = Instantiate(sourceMesh);
+                        for (var j = 0; j < srcVetices.Length; ++j)
                         {
-                            case Axis.X: matrix *= Matrix4x4.Rotate(Quaternion.Euler(0, 90f, 0)); break;
-                            case Axis.Y: matrix *= Matrix4x4.Rotate(Quaternion.Euler(90f, 0, 0)); break;
+                            var vertexData = new VertexData() { position = srcVetices[j], normal = srcNormals[j] };
+                            vertexData = convert(vertexData);
+                            dstVertices[j] = vertexData.position;
+                            dstNormals[j] = vertexData.normal;
                         }
-                        combines.Add(new CombineInstance() { mesh = sourceMesh, transform = matrix });
+                        curveMesh.vertices = dstVertices;
+                        curveMesh.normals = dstNormals;
+                        curveMesh.colors32 = Array.ConvertAll(srcColors, c => (Color32)(Color.white - (Color.white - c) * mulColor));
+                        combines.Add(new CombineInstance() { mesh = curveMesh });
+                        time = Mathf.Repeat(time + 0.1f, 1f);
                     }
                     var mesh = new Mesh();
-                    mesh.CombineMeshes(combines.ToArray(), true, true, true);
+                    mesh.CombineMeshes(combines.ToArray(), true, false, false);
+                    foreach (var c in combines)
+                        DestroyImmediate(c.mesh);
                     MeshUtility.Optimize(mesh);
                     mesh.UploadMeshData(true);
-                    var go = new GameObject($"ProcedualMesh{i}") { hideFlags = HideFlags.HideInHierarchy | HideFlags.NotEditable };
+                    var go = new GameObject($"ProcedualMesh{i}") { hideFlags = HideFlags.NotEditable };
+                    go.transform.SetParent(transform);
                     ++sp.arraySize;
                     using (var element = sp.GetArrayElementAtIndex(sp.arraySize - 1))
                         element.objectReferenceValue = go;
@@ -149,14 +174,22 @@ namespace MomomaAssets
                 var startPos = m_Anchors[i].position;
                 var endPos = m_Anchors[i + 1].position;
                 var curve = new CatenaryCurve(startPos, endPos, m_Catenary, unitLength);
-                foreach (var line in curve)
+                var vertA = new VertexData() { position = unitLength * 0.5f * Vector3.right };
+                var vertB = new VertexData() { position = unitLength * 0.5f * Vector3.left };
+                foreach (var convert in curve)
                 {
-                    Gizmos.DrawLine(line.from, line.to);
+                    Gizmos.DrawLine(convert(vertA).position, convert(vertB).position);
                 }
             }
         }
 
-        sealed class CatenaryCurve : IEnumerable<(Vector3 from, Vector3 to)>
+        struct VertexData
+        {
+            public Vector3 position;
+            public Vector3 normal;
+        }
+
+        sealed class CatenaryCurve : IEnumerable<Func<VertexData, VertexData>>
         {
             static float Asinh(float x) => Mathf.Log(x + Mathf.Sqrt(x * x + 1f));
             static float Acosh(float x) => Mathf.Log(x + Mathf.Sqrt(x * x - 1f));
@@ -176,10 +209,9 @@ namespace MomomaAssets
                 m_UnitLength = unitLength;
             }
 
-
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-            public IEnumerator<(Vector3 from, Vector3 to)> GetEnumerator()
+            public IEnumerator<Func<VertexData, VertexData>> GetEnumerator()
             {
                 var hDirection = new Vector3(m_ToPos.x - m_FromPos.x, 0, m_ToPos.z - m_FromPos.z);
                 var hDistance = hDirection.magnitude;
@@ -187,19 +219,26 @@ namespace MomomaAssets
                 var vDistance = m_ToPos.y - m_FromPos.y;
                 var a = m_Catenary * Asinh(vDistance / m_Catenary * 0.5f / Sinh(hDistance / m_Catenary * 0.5f)) - hDistance * 0.5f;
                 var b = hDistance + a;
-                var totalLength = m_Catenary * (Sinh(b / m_Catenary) - Sinh(a / m_Catenary));
+                var offset = Sinh(a / m_Catenary);
+                var totalLength = m_Catenary * (Sinh(b / m_Catenary) - offset);
                 var count = Mathf.RoundToInt(totalLength / m_UnitLength);
                 var length = totalLength / count;
-                var currentPos = m_FromPos;
-                var currentA = a;
-                var origin = m_FromPos - (a * hDirection + m_Catenary * Cosh(a / m_Catenary) * Vector3.up);
+                var lScale = length / m_UnitLength;
+                Func<float, Vector3> catenaryFunc = (float x) => x * hDirection + m_Catenary * Cosh(x / m_Catenary) * Vector3.up;
+                var origin = m_FromPos - catenaryFunc(a);
+                var biHDirection = new Vector3(-hDirection.z, 0, hDirection.x);
                 for (var i = 0; i < count; ++i)
                 {
-                    var nextA = Asinh(length / m_Catenary + Sinh(currentA / m_Catenary)) * m_Catenary;
-                    var nextPos = origin + nextA * hDirection + m_Catenary * Cosh(nextA / m_Catenary) * Vector3.up;
-                    yield return (currentPos, nextPos);
-                    currentPos = nextPos;
-                    currentA = nextA;
+                    yield return (VertexData vert) =>
+                    {
+                        var pos = vert.position;
+                        var x = m_Catenary * Asinh((length * (i + 0.5f) + pos.x * lScale) / m_Catenary + offset);
+                        vert.position = origin + catenaryFunc(x);
+                        var normal = (-Sinh(x / m_Catenary) * hDirection + Vector3.up).normalized;
+                        vert.position += pos.z * biHDirection + pos.y * normal;
+                        vert.normal = Quaternion.LookRotation(biHDirection, normal) * vert.normal;
+                        return vert;
+                    };
                 }
             }
         }
