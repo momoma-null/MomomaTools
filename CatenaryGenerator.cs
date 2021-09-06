@@ -7,7 +7,7 @@ using UnityEditor;
 
 namespace MomomaAssets
 {
-    sealed class CatenaryGenerator : MonoBehaviour, ISerializationCallbackReceiver
+    sealed class CatenaryGenerator : MonoBehaviour
     {
         enum Axis { X, Y, Z }
 
@@ -25,24 +25,7 @@ namespace MomomaAssets
         [SerializeField]
         Gradient m_Gradient = new Gradient();
 
-        void ISerializationCallbackReceiver.OnAfterDeserialize()
-        {
-            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
-            EditorApplication.hierarchyChanged += OnHierarchyChanged;
-        }
-
-        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
-
-        void OnHierarchyChanged()
-        {
-            if (this == null)
-            {
-                DestroyAllCurves();
-                EditorApplication.hierarchyChanged -= OnHierarchyChanged;
-            }
-        }
-
-        void OnReset()
+        void Reset()
         {
             hideFlags |= HideFlags.DontSaveInBuild;
         }
