@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEditor;
 using UnityEditor.EditorTools;
 
@@ -8,16 +7,7 @@ namespace MomomaAssets
     [EditorTool("MomomaTools/FaceSnap")]
     sealed class FaceSnap : EditorTool
     {
-        const string k_PrefKeyPivotMode = "FaceSnap_PivotMode";
-
-        static PivotMode s_PivotMode;
-
         RaycastHit[] m_Results = new RaycastHit[1];
-
-        void OnEnable()
-        {
-            s_PivotMode = (PivotMode)EditorPrefs.GetInt(k_PrefKeyPivotMode, 0);
-        }
 
         public override void OnToolGUI(EditorWindow window)
         {
