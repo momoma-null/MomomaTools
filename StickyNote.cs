@@ -35,13 +35,17 @@ namespace MomomaAssets
             Handles.BeginGUI();
             try
             {
-                var position = HandleUtility.WorldToGUIPoint(transform.position);
-                position += new Vector2(EditorGUIUtility.singleLineHeight, EditorGUIUtility.singleLineHeight);
-                Styles.s_StickyNote.text = m_Note;
-                var size = EditorStyles.label.CalcSize(Styles.s_StickyNote);
-                var rect = new Rect(position, size);
-                EditorGUI.DrawRect(rect, Color.black);
-                EditorGUI.SelectableLabel(rect, m_Note);
+                var position3 = HandleUtility.WorldToGUIPointWithDepth(transform.position);
+                if (position3.z > 0)
+                {
+                    var position = new Vector2(position3.x, position3.y);
+                    position += new Vector2(EditorGUIUtility.singleLineHeight, EditorGUIUtility.singleLineHeight);
+                    Styles.s_StickyNote.text = m_Note;
+                    var size = EditorStyles.label.CalcSize(Styles.s_StickyNote);
+                    var rect = new Rect(position, size);
+                    EditorGUI.DrawRect(rect, Color.black);
+                    EditorGUI.SelectableLabel(rect, m_Note);
+                }
             }
             finally
             {
