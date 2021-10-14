@@ -4,26 +4,22 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using UnityEditor.Experimental.SceneManagement;
 
 namespace MomomaAssets
 {
     sealed class CatenaryGenerator : MonoBehaviour
     {
-        enum Axis { X, Y, Z }
-
         [SerializeField]
         MeshRenderer m_SourceMeshRenderer = null;
         [SerializeField]
-        Axis m_Axis = Axis.Z;
-        [SerializeField]
         Transform[] m_Anchors = new Transform[0];
-
-        [SerializeField, HideInInspector]
-        GameObject[] m_MeshObjects = new GameObject[0];
         [SerializeField]
         float m_Catenary = 10f;
         [SerializeField]
         Gradient m_Gradient = new Gradient();
+        [SerializeField, HideInInspector]
+        GameObject[] m_MeshObjects = new GameObject[0];
 
         void Reset()
         {
@@ -59,6 +55,8 @@ namespace MomomaAssets
             var sourceMesh = m_SourceMeshRenderer.GetComponent<MeshFilter>().sharedMesh;
             if (sourceMesh == null)
                 return;
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            var assetPath = prefabStage != null && prefabStage.IsPartOfPrefabContents(this.gameObject) ? prefabStage.prefabAssetPath : null;
             using (var so = new SerializedObject(this))
             using (var sp = so.FindProperty(nameof(m_MeshObjects)))
             {
@@ -70,14 +68,7 @@ namespace MomomaAssets
                 srcColors = srcColors != null && srcColors.Length == srcVetices.Length ? srcColors : new Color32[srcVetices.Length];
                 var dstVertices = new Vector3[srcVetices.Length];
                 var dstNormals = new Vector3[srcVetices.Length];
-                var unitLength = 0f;
-                switch (m_Axis)
-                {
-                    case Axis.X: unitLength = bounds.size.x; break;
-                    case Axis.Y: unitLength = bounds.size.y; break;
-                    case Axis.Z: unitLength = bounds.size.z; break;
-                    default: throw new System.ArgumentOutOfRangeException(nameof(m_Axis));
-                }
+                var unitLength = bounds.size.x;
                 sp.ClearArray();
                 for (var i = 0; i < m_Anchors.Length - 1; ++i)
                 {
@@ -87,12 +78,6 @@ namespace MomomaAssets
                     var endPos = m_Anchors[i + 1].position;
                     var curve = new CatenaryCurve(startPos, endPos, m_Catenary, unitLength);
                     var combines = new List<CombineInstance>();
-                    var rotate = Quaternion.identity;
-                    switch (m_Axis)
-                    {
-                        case Axis.X: rotate *= Quaternion.Euler(0, 90f, 0); break;
-                        case Axis.Y: rotate *= Quaternion.Euler(90f, 0, 0); break;
-                    }
                     var time = 0f;
                     foreach (var convert in curve)
                     {
@@ -111,19 +96,21 @@ namespace MomomaAssets
                         combines.Add(new CombineInstance() { mesh = curveMesh });
                         time = Mathf.Repeat(time + 0.1f, 1f);
                     }
-                    var mesh = new Mesh();
+                    var mesh = new Mesh() { name = $"ProcedualMesh{i}" };
                     mesh.CombineMeshes(combines.ToArray(), true, false, false);
                     foreach (var c in combines)
                         DestroyImmediate(c.mesh);
                     MeshUtility.Optimize(mesh);
                     mesh.UploadMeshData(true);
-                    var go = new GameObject($"ProcedualMesh{i}") { hideFlags = HideFlags.NotEditable };
+                    var go = new GameObject(mesh.name) { hideFlags = HideFlags.NotEditable };
                     go.transform.SetParent(transform);
                     ++sp.arraySize;
                     using (var element = sp.GetArrayElementAtIndex(sp.arraySize - 1))
                         element.objectReferenceValue = go;
                     var meshFilter = go.AddComponent<MeshFilter>();
                     var renderer = go.AddComponent<MeshRenderer>();
+                    if (!string.IsNullOrEmpty(assetPath))
+                        AssetDatabase.AddObjectToAsset(mesh, assetPath);
                     meshFilter.sharedMesh = mesh;
                     renderer.sharedMaterials = m_SourceMeshRenderer.sharedMaterials;
                     Undo.RegisterCreatedObjectUndo(mesh, "Create Mesh");
@@ -135,20 +122,8 @@ namespace MomomaAssets
 
         void OnDrawGizmos()
         {
-            if (m_Anchors.Length < 2 || m_SourceMeshRenderer == null)
+            if (m_Anchors.Length < 2)
                 return;
-            var sourceMesh = m_SourceMeshRenderer.GetComponent<MeshFilter>().sharedMesh;
-            if (sourceMesh == null)
-                return;
-            var bounds = sourceMesh.bounds;
-            var unitLength = 0f;
-            switch (m_Axis)
-            {
-                case Axis.X: unitLength = bounds.size.x; break;
-                case Axis.Y: unitLength = bounds.size.y; break;
-                case Axis.Z: unitLength = bounds.size.z; break;
-                default: throw new System.ArgumentOutOfRangeException(nameof(m_Axis));
-            }
             Gizmos.color = Color.blue;
             for (var i = 0; i < m_Anchors.Length - 1; ++i)
             {
@@ -156,9 +131,9 @@ namespace MomomaAssets
                     continue;
                 var startPos = m_Anchors[i].position;
                 var endPos = m_Anchors[i + 1].position;
-                var curve = new CatenaryCurve(startPos, endPos, m_Catenary, unitLength);
-                var vertA = new VertexData() { position = unitLength * 0.5f * Vector3.right };
-                var vertB = new VertexData() { position = unitLength * 0.5f * Vector3.left };
+                var curve = new CatenaryCurve(startPos, endPos, m_Catenary, 0.1f);
+                var vertA = new VertexData() { position = 0.05f * Vector3.right };
+                var vertB = new VertexData() { position = -vertA.position };
                 foreach (var convert in curve)
                 {
                     Gizmos.DrawLine(convert(vertA).position, convert(vertB).position);
@@ -175,7 +150,6 @@ namespace MomomaAssets
         sealed class CatenaryCurve : IEnumerable<Func<VertexData, VertexData>>
         {
             static float Asinh(float x) => Mathf.Log(x + Mathf.Sqrt(x * x + 1f));
-            static float Acosh(float x) => Mathf.Log(x + Mathf.Sqrt(x * x - 1f));
             static float Sinh(float x) => (Mathf.Exp(x) - Mathf.Exp(-x)) * 0.5f;
             static float Cosh(float x) => (Mathf.Exp(x) + Mathf.Exp(-x)) * 0.5f;
 
@@ -230,14 +204,25 @@ namespace MomomaAssets
         [CanEditMultipleObjects]
         sealed class CatenaryGeneratorInspector : Editor
         {
+            static class Styles
+            {
+                public static readonly GUIContent generate = EditorGUIUtility.TrTextContent("Generate");
+                public static readonly GUIContent clear = EditorGUIUtility.TrTextContent("Clear");
+            }
+
             public override void OnInspectorGUI()
             {
                 base.OnInspectorGUI();
-                var catenaryGenerator = (target as CatenaryGenerator);
-                using (new EditorGUI.DisabledScope(catenaryGenerator.m_Anchors.Length < 2 || catenaryGenerator.m_SourceMeshRenderer == null))
+                var catenaryGenerator = target as CatenaryGenerator;
+                using (new EditorGUI.DisabledScope(!catenaryGenerator.gameObject.scene.IsValid()))
                 {
-                    if (GUILayout.Button("Generate"))
-                        (target as CatenaryGenerator).RecalculateMesh();
+                    using (new EditorGUI.DisabledScope(catenaryGenerator.m_Anchors.Length < 2 || catenaryGenerator.m_SourceMeshRenderer == null))
+                    {
+                        if (GUILayout.Button(Styles.generate))
+                            catenaryGenerator.RecalculateMesh();
+                    }
+                    if (GUILayout.Button(Styles.clear))
+                        catenaryGenerator.DestroyAllCurves();
                 }
             }
         }
