@@ -12,6 +12,14 @@ namespace MomomaAssets
 
     class MeshRendererExplorer : EditorWindow
     {
+        static class Styles
+        {
+            public static GUIStyle largeButton = "LargeButton";
+            public static GUIContent rootGameObject = EditorGUIUtility.TrTextContent("Root GameObject");
+            public static GUIContent includeInactiveGameObject = EditorGUIUtility.TrTextContent("Include Inactive GameObject");
+
+        }
+
         const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
         const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
         const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
@@ -26,16 +34,22 @@ namespace MomomaAssets
         int textureNum;
         int textureSize;
 
+        [SerializeField]
         int m_SelectedTabIndex;
+        [SerializeField]
         GameObject m_RootGameObject;
+        [SerializeField]
         bool m_IncludeInactive;
+        [SerializeField]
+        TreeViewState m_ViewState = new TreeViewState();
+
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
 
         [MenuItem("MomomaTools/Mesh Renderer Explorer", false, 105)]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<MeshRendererExplorer>("Mesh Renderer Explorer");
+            EditorWindow.GetWindow<MeshRendererExplorer>(ObjectNames.NicifyVariableName(nameof(MeshRendererExplorer)));
         }
 
         void OnEnable()
@@ -64,7 +78,7 @@ namespace MomomaAssets
             using (new EditorGUILayout.HorizontalScope())
             {
                 GUILayout.FlexibleSpace();
-                m_SelectedTabIndex = GUILayout.Toolbar(m_SelectedTabIndex, s_TabNames, "LargeButton", GUILayout.MaxWidth(500));
+                m_SelectedTabIndex = GUILayout.Toolbar(m_SelectedTabIndex, s_TabNames, Styles.largeButton, GUILayout.MaxWidth(500));
                 GUILayout.FlexibleSpace();
             }
             var changedTab = EditorGUI.EndChangeCheck();
@@ -77,10 +91,10 @@ namespace MomomaAssets
                 {
                     using (var check = new EditorGUI.ChangeCheckScope())
                     {
-                        m_RootGameObject = EditorGUILayout.ObjectField("Root GameObject", m_RootGameObject, typeof(GameObject), true) as GameObject;
+                        m_RootGameObject = EditorGUILayout.ObjectField(Styles.rootGameObject, m_RootGameObject, typeof(GameObject), true) as GameObject;
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            m_IncludeInactive = GUILayout.Toggle(m_IncludeInactive, "Include Inactive GameObject");
+                            m_IncludeInactive = GUILayout.Toggle(m_IncludeInactive, Styles.includeInactiveGameObject);
                             if (check.changed)
                                 OnHierarchyChange();
                             if (m_SelectedTabIndex > 0)
@@ -89,17 +103,10 @@ namespace MomomaAssets
                                 {
                                     switch (m_SelectedTabIndex)
                                     {
-                                        case 1:
-                                            InitializeStaticTab();
-                                            break;
-                                        case 2:
-                                            InitializeLightingTab();
-                                            break;
-                                        case 3:
-                                            InitializeLightmapTab();
-                                            break;
-                                        default:
-                                            throw new System.InvalidOperationException("tab number is invalid");
+                                        case 1: InitializeStaticTab(); break;
+                                        case 2: InitializeLightingTab(); break;
+                                        case 3: InitializeLightmapTab(); break;
+                                        default: throw new System.InvalidOperationException("tab number is invalid");
                                     }
                                 }
                                 EditorGUI.BeginChangeCheck();
@@ -155,7 +162,7 @@ namespace MomomaAssets
             header.Add("Navigation", 50, item => item.NavigationStatic, (item, value) => item.NavigationStatic = value, item => item.m_StaticEditorFlags);
             header.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = value, item => item.m_StaticEditorFlags);
             header.Add("Reflection", 50, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = value, item => item.m_StaticEditorFlags);
-            m_TreeView = new UnityObjectTreeView<GameObjectTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
+            m_TreeView = new UnityObjectTreeView<GameObjectTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
@@ -168,7 +175,7 @@ namespace MomomaAssets
             header.Add("ProbeAnchor", 80, item => item.m_ProbeAnchor.objectReferenceValue, item => item.m_ProbeAnchor);
             header.Add("CastShadows", 60, item => item.m_CastShadows.enumValueIndex, item => item.m_CastShadows);
             header.Add("ReceiveShadows", 50, item => item.m_ReceiveShadows.boolValue, item => item.m_ReceiveShadows);
-            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
+            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
@@ -182,7 +189,8 @@ namespace MomomaAssets
 #if UNITY_2019_1_OR_NEWER
             header.Add<System.Enum>("Receive GI", 80, item => (ReceiveGI)item.m_ReceiveGI.intValue, (item, value) => item.m_ReceiveGI.intValue = (int)(ReceiveGI)value, item => item.m_ReceiveGI);
 #endif
-            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
+            header.Add("Lightmap Index", 80, item => item.LightmapIndex);
+            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
@@ -229,10 +237,21 @@ namespace MomomaAssets
             CountReset();
             var originalMaterials = new HashSet<Material>();
             var originalTextures = new HashSet<Texture>();
+            var batchedMeshes = new HashSet<Mesh>();
             var meshRendererList = GetMeshRenderers();
+            var triangles = new List<int>();
             foreach (var mr in meshRendererList)
             {
-                triangleNum += mr.GetComponent<MeshFilter>()?.sharedMesh?.triangles.Length / 3 ?? 0;
+                var mesh = mr.GetComponent<MeshFilter>()?.sharedMesh;
+                if (mesh != null && (!mr.isPartOfStaticBatch || batchedMeshes.Add(mesh)))
+                {
+                    for (var i = 0; i < mesh.subMeshCount; ++i)
+                    {
+                        var subMesh = mesh.GetSubMesh(i);
+                        if (subMesh.topology == MeshTopology.Triangles)
+                            triangleNum += subMesh.indexCount / 3;
+                    }
+                }
                 var materialArray = mr.sharedMaterials;
                 materialsNum += materialArray.Length;
                 foreach (var mat in materialArray)
@@ -355,9 +374,13 @@ namespace MomomaAssets
 #if UNITY_2019_1_OR_NEWER
             readonly internal SerializedProperty m_ReceiveGI;
 #endif
+            readonly MeshRenderer m_MeshRenderer;
+
+            internal int LightmapIndex => m_MeshRenderer.lightmapIndex;
 
             internal MeshRendererTreeViewItem(int id, MeshRenderer obj) : base(id)
             {
+                m_MeshRenderer = obj;
                 serializedObject = new SerializedObject(obj);
                 displayName = obj.name;
 
