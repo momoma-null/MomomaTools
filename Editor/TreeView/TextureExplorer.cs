@@ -32,6 +32,9 @@ namespace MomomaAssets
         static readonly Type s_TextureUtilType = Type.GetType("UnityEditor.TextureUtil, UnityEditor.dll");
         static readonly Dictionary<string, MethodInfo> s_TextureUtilInfos = new Dictionary<string, MethodInfo>();
 
+        [SerializeField]
+        TreeViewState m_ViewState = new TreeViewState();
+
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
 
@@ -53,7 +56,7 @@ namespace MomomaAssets
 
         static bool IsEnabled(UnityObject assetObject)
         {
-            if (assetObject == null || (assetObject.hideFlags & HideFlags.NotEditable) != 0)
+            if (assetObject == null)
                 return false;
             if (!EditorUtility.IsPersistent(assetObject))
                 return true;
@@ -143,7 +146,7 @@ namespace MomomaAssets
             header.Add("Readable", 50, item => Convert.ToBoolean(item.m_IsReadable.intValue), (item, value) => item.m_IsReadable.intValue = Convert.ToInt32(value), item => item.m_IsReadable);
             header.Add("Crunched Compression", 50, item => item.m_CrunchedCompression.boolValue, item => item.m_CrunchedCompression);
             header.Add("Compression Quality", 60, item => item.m_CompressionQuality.intValue, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
-            m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(new TreeViewState(), header.GetHeader(), sortedColumnIndexStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
+            m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
             m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
         }
 
