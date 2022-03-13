@@ -1,12 +1,12 @@
 ﻿using System;
-using System.IO;
-using System.Reflection;
-using System.Linq;
 using System.Collections.Generic;
-using UnityEngine;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
+using UnityEngine;
 
 namespace MomomaAssets
 {
@@ -17,7 +17,9 @@ namespace MomomaAssets
         const string ExportModelSettingsSerializeTypeName = "UnityEditor.Formats.Fbx.Exporter.ExportModelSettingsSerialize, Unity.Formats.Fbx.Editor";
 
         readonly static Color s_RangeColor = new Color(0f, 1f, 1f, 0.2f);
+#if !UNITY_2019_4_OR_NEWER
         readonly static MethodInfo s_OverlapBoxMethodInfo = typeof(Physics).GetMethod("OverlapBox_Internal", BindingFlags.Static | BindingFlags.NonPublic);
+#endif
 
         static AddRequest s_Request;
         static Type ModelExporterType = Type.GetType(ModelExporterTypeName);
@@ -26,7 +28,6 @@ namespace MomomaAssets
         PreviewRenderUtility previewRender;
         Vector2 dragBeginPosition;
         Vector2 dragEndPosition;
-        Color backgroundColor;
         HashSet<GameObject> renderGOs;
         Stack<HashSet<GameObject>> inactiveGOs;
         Animator rootAnimator;
@@ -34,10 +35,13 @@ namespace MomomaAssets
         Vector3 centerPos;
         Bounds bounds;
 
+        [SerializeField]
+        Color backgroundColor = new Color(0.5f, 0.6f, 0.6f, 1f);
+
         [MenuItem("MomomaTools/SkinnedMeshEditor")]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<SkinnedMeshEditor>("SkinnedMeshEditor");
+            GetWindow<SkinnedMeshEditor>(nameof(SkinnedMeshEditor));
         }
 
         void OnEnable()
@@ -185,23 +189,25 @@ namespace MomomaAssets
                 var rect = GUILayoutUtility.GetRect(512f, 512f);
                 previewRender.BeginPreview(rect, GUIStyle.none);
                 var previewCam = previewRender.camera;
+                var currentEvent = Event.current;
                 if (rect.Contains(Event.current.mousePosition))
                 {
-                    if (Event.current.type == EventType.MouseDrag && Event.current.button == 1)
+                    if (currentEvent.type == EventType.MouseDrag && currentEvent.button == 1)
                     {
                         ResetRange();
-                        var drag = Event.current.delta;
+                        var drag = currentEvent.delta;
                         if (drag != Vector2.zero)
                         {
-                            previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.up, drag.x);
+                            previewCam.transform.RotateAround(centerPos, Vector3.up, drag.x);
                             previewCam.transform.RotateAround(centerPos, previewCam.transform.rotation * Vector3.right, drag.y);
                             Repaint();
                         }
+                        currentEvent.Use();
                     }
-                    else if (Event.current.type == EventType.MouseDrag && Event.current.button == 2)
+                    else if (currentEvent.type == EventType.MouseDrag && currentEvent.button == 2)
                     {
                         ResetRange();
-                        var drag = Event.current.delta;
+                        var drag = currentEvent.delta;
                         if (drag != Vector2.zero)
                         {
                             drag.x *= -1f;
@@ -214,8 +220,9 @@ namespace MomomaAssets
                             previewCam.transform.position += deltaPos;
                             Repaint();
                         }
+                        currentEvent.Use();
                     }
-                    else if (Event.current.type == EventType.ScrollWheel)
+                    else if (currentEvent.type == EventType.ScrollWheel)
                     {
                         var scroll = Event.current.delta.y;
                         if (scroll != 0)
@@ -225,25 +232,28 @@ namespace MomomaAssets
                             previewCam.transform.position = centerPos + cameraPos.normalized * Mathf.Clamp(cameraPos.magnitude + scroll * 0.1f, 0.01f, farLimit);
                             Repaint();
                         }
+                        currentEvent.Use();
                     }
-                    else if (Event.current.type == EventType.MouseDrag && Event.current.button == 0)
+                    else if (currentEvent.type == EventType.MouseDrag && currentEvent.button == 0)
                     {
-                        dragEndPosition = Event.current.mousePosition;
+                        dragEndPosition = currentEvent.mousePosition;
                         if (dragBeginPosition == Vector2.zero)
                         {
                             dragBeginPosition = dragEndPosition;
                         }
                         Repaint();
+                        currentEvent.Use();
                     }
-                    else if (Event.current.type == EventType.MouseDown && Event.current.button == 0)
+                    else if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0)
                     {
                         ResetRange();
-                        dragBeginPosition = Event.current.mousePosition;
+                        dragBeginPosition = currentEvent.mousePosition;
                         dragEndPosition = dragBeginPosition;
+                        currentEvent.Use();
                     }
-                    else if (Event.current.type == EventType.MouseUp && Event.current.button == 0)
+                    else if (currentEvent.type == EventType.MouseUp && currentEvent.button == 0)
                     {
-                        var endRay = MouseToRay(Event.current.mousePosition, rect, previewCam);
+                        var endRay = MouseToRay(currentEvent.mousePosition, rect, previewCam);
                         var beginRay = MouseToRay(dragBeginPosition, rect, previewCam);
                         var physicsScene = PhysicsSceneExtensions.GetPhysicsScene(previewCam.scene);
                         try
@@ -251,8 +261,7 @@ namespace MomomaAssets
                             Physics.queriesHitBackfaces = true;
                             if (dragBeginPosition == dragEndPosition)
                             {
-                                RaycastHit hit;
-                                physicsScene.Raycast(endRay.origin, endRay.direction, out hit, 10f);
+                                physicsScene.Raycast(endRay.origin, endRay.direction, out var hit, 10f);
                                 if (hit.collider)
                                 {
                                     PushInactiveGO(new HashSet<GameObject>() { hit.collider.gameObject });
@@ -282,10 +291,6 @@ namespace MomomaAssets
 #endif
                             }
                         }
-                        catch
-                        {
-                            throw;
-                        }
                         finally
                         {
                             Physics.queriesHitBackfaces = false;
@@ -294,7 +299,7 @@ namespace MomomaAssets
                         ResetRange();
                     }
                 }
-                else if (Event.current.type != EventType.Layout)
+                else if (currentEvent.type != EventType.Layout)
                 {
                     ResetRange();
                 }
@@ -366,6 +371,7 @@ namespace MomomaAssets
         void ResetCamera()
         {
             previewRender.camera.clearFlags = CameraClearFlags.SolidColor;
+            previewRender.camera.backgroundColor = backgroundColor;
             previewRender.camera.transform.position = new Vector3(0, 0, Mathf.Max(bounds.size.x, bounds.size.y) * 4f);
             previewRender.camera.transform.rotation = Quaternion.Euler(0, 180f, 0);
             centerPos = Vector3.zero;
@@ -630,9 +636,9 @@ namespace MomomaAssets
             rootObjCopy.transform.position = -bounds.center;
             bounds.center = Vector3.zero;
             previewRender.AddSingleGO(rootObjCopy);
-            var adjacentTriangles = new HashSet<AdjacentTriangle>();
             var indices = new List<int>();
-            var triangles = new HashSet<Triangle>();
+            var edgeToTriangles =new Dictionary<Edge, AdjacentTriangle>();
+            var adjacentTriangles =new HashSet<AdjacentTriangle>();
             foreach (var skinned in skinnedMRs)
             {
                 var srcMesh = skinned.sharedMesh;
@@ -641,59 +647,67 @@ namespace MomomaAssets
                 var vertexIDs = new Dictionary<Vector3, int>();
                 var convertIndices = new int[srcVertices.Length];
                 for (var i = 0; i < srcVertices.Length; ++i)
-                    if (vertexIDs.TryGetValue(srcVertices[i], out var index))
-                        convertIndices[i] = index;
-                    else
-                        convertIndices[i] = (vertexIDs[srcVertices[i]] = i);
+                    convertIndices[i] = vertexIDs.TryGetValue(srcVertices[i], out var index) ? index : (vertexIDs[srcVertices[i]] = i);
                 for (var i = 0; i < srcMesh.subMeshCount; ++i)
                 {
                     indices.Clear();
+                    edgeToTriangles.Clear();
+                    adjacentTriangles.Clear();
                     srcMesh.GetTriangles(indices, i);
-                    triangles.Clear();
-                    for (var j = 0; j < indices.Count; j += 3)
-                    {
-                        triangles.Add(new Triangle(indices[j], indices[j + 1], indices[j + 2]));
-                    }
                     try
                     {
-                        adjacentTriangles.Clear();
-                        var maxCount = triangles.Count;
-                        while (triangles.Count > 0)
+                        EditorUtility.DisplayProgressBar("Converting...", meshName, 0f);
+                        for (var j = 0; j < indices.Count; j += 3)
                         {
-                            EditorUtility.DisplayProgressBar("Converting...", meshName, 1f - 1f * triangles.Count / maxCount);
-                            var triangle = triangles.First();
-                            triangles.Remove(triangle);
-                            var adjacentTriangle = new AdjacentTriangle(triangle);
-                            adjacentTriangles.Add(adjacentTriangle);
-                            while (true)
+                            var triangle = new Triangle(indices[j], indices[j + 1], indices[j + 2]);
+                            if (edgeToTriangles.TryGetValue(triangle.Edges[0], out var adjacentTriangle))
                             {
-                                if (triangles.RemoveWhere(j => adjacentTriangle.AddTriangle(j)) == 0)
-                                    break;
+                                adjacentTriangle.AddTriangle(triangle);
+                                edgeToTriangles.Remove(triangle.Edges[0]);
+                                edgeToTriangles[triangle.Edges[1]] = adjacentTriangle;
+                                edgeToTriangles[triangle.Edges[2]] = adjacentTriangle;
+                            }
+                            else if (edgeToTriangles.TryGetValue(triangle.Edges[1], out adjacentTriangle))
+                            {
+                                adjacentTriangle.AddTriangle(triangle);
+                                edgeToTriangles.Remove(triangle.Edges[1]);
+                                edgeToTriangles[triangle.Edges[2]] = adjacentTriangle;
+                                edgeToTriangles[triangle.Edges[0]] = adjacentTriangle;
+                            }
+                            else if (edgeToTriangles.TryGetValue(triangle.Edges[2], out adjacentTriangle))
+                            {
+                                adjacentTriangle.AddTriangle(triangle);
+                                edgeToTriangles.Remove(triangle.Edges[2]);
+                                edgeToTriangles[triangle.Edges[0]] = adjacentTriangle;
+                                edgeToTriangles[triangle.Edges[1]] = adjacentTriangle;
+                            }
+                            else
+                            {
+                                adjacentTriangle = new AdjacentTriangle(triangle);
+                                edgeToTriangles[triangle.Edges[0]] = adjacentTriangle;
+                                edgeToTriangles[triangle.Edges[1]] = adjacentTriangle;
+                                edgeToTriangles[triangle.Edges[2]] = adjacentTriangle;
                             }
                         }
+                        adjacentTriangles.UnionWith(edgeToTriangles.Values);
                         foreach (var j in adjacentTriangles)
                             j.ConvertIndices(convertIndices);
                         var convertedAdjacentTriangles = new Queue<AdjacentTriangle>(adjacentTriangles.Count);
-                        maxCount = adjacentTriangles.Count;
+                        EditorUtility.DisplayProgressBar("Converting...", meshName, 0.5f);
                         while (adjacentTriangles.Count > 0)
                         {
-                            EditorUtility.DisplayProgressBar("Converting...", meshName, 1f - 1f * adjacentTriangles.Count / maxCount);
                             var adjacentTriangle = adjacentTriangles.First();
                             adjacentTriangles.Remove(adjacentTriangle);
                             convertedAdjacentTriangles.Enqueue(adjacentTriangle);
-                            while (true)
-                            {
-                                if (adjacentTriangles.RemoveWhere(j => adjacentTriangle.AddAdjacentTriangle(j)) == 0)
-                                    break;
-                            }
+                            while (adjacentTriangles.RemoveWhere(adjacentTriangle.AddAdjacentTriangle) > 0) { }
                         }
+                        EditorUtility.DisplayProgressBar("Converting...", meshName, 0.75f);
                         foreach (var j in convertedAdjacentTriangles)
                         {
                             var mesh = Instantiate(srcMesh);
                             mesh.hideFlags = HideFlags.HideAndDontSave;
                             mesh.triangles = j.GetTriangles();
-                            var renderGO = new GameObject();
-                            renderGO.hideFlags = HideFlags.DontSave;
+                            var renderGO = new GameObject { hideFlags = HideFlags.DontSave };
                             var newSkinned = renderGO.AddComponent<SkinnedMeshRenderer>();
                             newSkinned.sharedMaterial = skinned.sharedMaterials[i];
                             newSkinned.bones = skinned.bones;
@@ -705,10 +719,6 @@ namespace MomomaAssets
                             renderGOs.Add(renderGO);
                             previewRender.AddSingleGO(renderGO);
                         }
-                    }
-                    catch
-                    {
-                        throw;
                     }
                     finally
                     {
@@ -774,12 +784,12 @@ namespace MomomaAssets
         sealed class AdjacentTriangle
         {
             readonly HashSet<Edge> edges;
-            readonly Queue<int> vertices;
+            readonly List<int> vertices;
 
             public AdjacentTriangle(Triangle triangle)
             {
                 edges = new HashSet<Edge>(triangle.Edges);
-                vertices = new Queue<int>(triangle.Vertices);
+                vertices = new List<int>(triangle.Vertices);
             }
 
             public bool AddTriangle(Triangle triangle)
@@ -804,8 +814,7 @@ namespace MomomaAssets
                 {
                     return false;
                 }
-                foreach (var i in triangle.Vertices)
-                    vertices.Enqueue(i);
+                vertices.AddRange(triangle.Vertices);
                 return true;
             }
 
@@ -820,8 +829,7 @@ namespace MomomaAssets
                 if (!edges.Overlaps(adjacentTriangle.edges))
                     return false;
                 edges.UnionWith(adjacentTriangle.edges);
-                foreach (var i in adjacentTriangle.vertices)
-                    vertices.Enqueue(i);
+                vertices.AddRange(adjacentTriangle.vertices);
                 return true;
             }
 
