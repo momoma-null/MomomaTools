@@ -1,11 +1,12 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.Rendering;
 using UnityEditor;
-using UnityEditor.IMGUI.Controls;
 using UnityEditor.Experimental.SceneManagement;
+using UnityEditor.IMGUI.Controls;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 namespace MomomaAssets
 {
@@ -19,11 +20,6 @@ namespace MomomaAssets
             public static GUIContent includeInactiveGameObject = EditorGUIUtility.TrTextContent("Include Inactive GameObject");
 
         }
-
-        const string searchStringStateKey = "MeshRendererTreeViewWindow_SearchString";
-        const string sortedColumnIndexStaticStateKey = "MeshRendererTreeViewWindow_Static_sortedColumnIndex";
-        const string sortedColumnIndexLightingStateKey = "MeshRendererTreeViewWindow_Lighting_sortedColumnIndex";
-        const string sortedColumnIndexLightmapStateKey = "MeshRendererTreeViewWindow_Lightmap_sortedColumnIndex";
 
         static readonly string[] s_TabNames = new string[] { "Count", "Static", "Lighting", "Lightmap" };
 
@@ -42,6 +38,13 @@ namespace MomomaAssets
         bool m_IncludeInactive;
         [SerializeField]
         TreeViewState m_ViewState = new TreeViewState();
+        [SerializeField]
+        MultiColumnHeaderState[] multiColumnHeaderStates = new MultiColumnHeaderState[]
+        {
+            GetStaticViewState(),
+            GetLightingViewState(),
+            GetLightmapViewState()
+        };
 
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
@@ -49,7 +52,7 @@ namespace MomomaAssets
         [MenuItem("MomomaTools/Mesh Renderer Explorer", false, 105)]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<MeshRendererExplorer>(ObjectNames.NicifyVariableName(nameof(MeshRendererExplorer)));
+            GetWindow<MeshRendererExplorer>(ObjectNames.NicifyVariableName(nameof(MeshRendererExplorer)));
         }
 
         void OnEnable()
@@ -101,19 +104,12 @@ namespace MomomaAssets
                             {
                                 if (changedTab || m_TreeView == null)
                                 {
-                                    switch (m_SelectedTabIndex)
-                                    {
-                                        case 1: InitializeStaticTab(); break;
-                                        case 2: InitializeLightingTab(); break;
-                                        case 3: InitializeLightmapTab(); break;
-                                        default: throw new System.InvalidOperationException("tab number is invalid");
-                                    }
+                                    m_TreeView = GetCurrentTreeView();
                                 }
                                 EditorGUI.BeginChangeCheck();
                                 var searchString = m_SearchField.OnToolbarGUI(m_TreeView.searchString);
                                 if (EditorGUI.EndChangeCheck())
                                 {
-                                    SessionState.SetString(searchStringStateKey, searchString);
                                     m_TreeView.searchString = searchString;
                                 }
                             }
@@ -150,48 +146,59 @@ namespace MomomaAssets
             EditorGUILayout.Space();
         }
 
-        void InitializeStaticTab()
+        UnityObjectTreeViewBase GetCurrentTreeView()
         {
-            var header = new MultiColumnHeaderMaker<GameObjectTreeViewItem>();
-            header.Add("Name", 200, item => item.displayName);
-            header.Add<LayerMask>("Layer", 80, item => item.m_Layer.intValue, (item, value) => item.m_Layer.intValue = value, item => item.m_Layer);
-            header.Add("Lightmap", 50, item => item.LightmapStatic, (item, value) => item.LightmapStatic = value, item => item.m_StaticEditorFlags);
-            header.Add("Occluder", 50, item => item.OccluderStatic, (item, value) => item.OccluderStatic = value, item => item.m_StaticEditorFlags);
-            header.Add("Occludee", 50, item => item.OccludeeStatic, (item, value) => item.OccludeeStatic = value, item => item.m_StaticEditorFlags);
-            header.Add("Batching", 50, item => item.BatchingStatic, (item, value) => item.BatchingStatic = value, item => item.m_StaticEditorFlags);
-            header.Add("Navigation", 50, item => item.NavigationStatic, (item, value) => item.NavigationStatic = value, item => item.m_StaticEditorFlags);
-            header.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (item, value) => item.OffMeshLinkGeneration = value, item => item.m_StaticEditorFlags);
-            header.Add("Reflection", 50, item => item.ReflectionProbeStatic, (item, value) => item.ReflectionProbeStatic = value, item => item.m_StaticEditorFlags);
-            m_TreeView = new UnityObjectTreeView<GameObjectTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexStaticStateKey, () => GetTreeViewItems(isGameObject: true));
-            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
+            switch (m_SelectedTabIndex)
+            {
+                case 1:
+                    return new UnityObjectTreeView<GameObjectTreeViewItem>(m_ViewState, multiColumnHeaderStates[0], () => GetTreeViewItems(isGameObject: true));
+                case 2:
+                    return new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[1], () => GetTreeViewItems());
+                case 3:
+                    return new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[2], () => GetTreeViewItems(isLightmapStatic: true));
+                default: throw new InvalidOperationException("tab number is invalid");
+            }
         }
 
-        void InitializeLightingTab()
+        static MultiColumnHeaderState GetStaticViewState()
         {
-            var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
-            header.Add("Name", 200, item => item.displayName);
-            header.Add<System.Enum>("LightProbe", 80, item => (LightProbeUsage)item.m_LightProbeUsage.intValue, (item, value) => item.m_LightProbeUsage.intValue = (int)(LightProbeUsage)value, item => item.m_LightProbeUsage);
-            header.Add<System.Enum>("ReflectionProbe", 80, item => (ReflectionProbeUsage)item.m_ReflectionProbeUsage.intValue, (item, value) => item.m_ReflectionProbeUsage.intValue = (int)(ReflectionProbeUsage)value, item => item.m_ReflectionProbeUsage);
-            header.Add("ProbeAnchor", 80, item => item.m_ProbeAnchor.objectReferenceValue, item => item.m_ProbeAnchor);
-            header.Add("CastShadows", 60, item => item.m_CastShadows.enumValueIndex, item => item.m_CastShadows);
-            header.Add("ReceiveShadows", 50, item => item.m_ReceiveShadows.boolValue, item => item.m_ReceiveShadows);
-            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexLightingStateKey, () => GetTreeViewItems());
-            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
+            var columns = new ColumnArray<GameObjectTreeViewItem>();
+            columns.Add("Name", 200, item => item.displayName);
+            columns.AddIntAsLayerMask("Layer", 80, item => item.m_Layer.intValue, item => item.m_Layer);
+            columns.Add("GI", 50, item => item.LightmapStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ContributeGI), item => item.m_StaticEditorFlags);
+            columns.Add("Occluder", 50, item => item.OccluderStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccluderStatic), item => item.m_StaticEditorFlags);
+            columns.Add("Occludee", 50, item => item.OccludeeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccludeeStatic), item => item.m_StaticEditorFlags);
+            columns.Add("Batching", 50, item => item.BatchingStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.BatchingStatic), item => item.m_StaticEditorFlags);
+            columns.Add("Navigation", 50, item => item.NavigationStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.NavigationStatic), item => item.m_StaticEditorFlags);
+            columns.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (r, item) => item.DrawProperty(r, StaticEditorFlags.OffMeshLinkGeneration), item => item.m_StaticEditorFlags);
+            columns.Add("Reflection", 50, item => item.ReflectionProbeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ReflectionProbeStatic), item => item.m_StaticEditorFlags);
+            return columns.GetHeaderState();
         }
 
-        void InitializeLightmapTab()
+        static MultiColumnHeaderState GetLightingViewState()
         {
-            var header = new MultiColumnHeaderMaker<MeshRendererTreeViewItem>();
-            header.Add("Name", 200, item => item.displayName);
-            header.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap.floatValue, item => item.m_ScaleInLightmap);
-            header.Add("PrioritizeIllumination", 50, item => item.m_ImportantGI.boolValue, item => item.m_ImportantGI);
-            header.Add("StitchSeams", 50, item => item.m_StitchLightmapSeams.boolValue, item => item.m_StitchLightmapSeams);
+            var columns = new ColumnArray<MeshRendererTreeViewItem>();
+            columns.Add("Name", 200, item => item.displayName);
+            columns.AddIntAsEnum("LightProbe", 80, item => (LightProbeUsage)item.m_LightProbeUsage.intValue, item => item.m_LightProbeUsage);
+            columns.AddIntAsEnum("ReflectionProbe", 80, item => (ReflectionProbeUsage)item.m_ReflectionProbeUsage.intValue, item => item.m_ReflectionProbeUsage);
+            columns.Add("ProbeAnchor", 80, item => item.m_ProbeAnchor.objectReferenceValue, item => item.m_ProbeAnchor);
+            columns.Add("CastShadows", 60, item => item.m_CastShadows.enumValueIndex, item => item.m_CastShadows);
+            columns.Add("ReceiveShadows", 50, item => item.m_ReceiveShadows.boolValue, item => item.m_ReceiveShadows);
+            return columns.GetHeaderState();
+        }
+
+        static MultiColumnHeaderState GetLightmapViewState()
+        {
+            var columns = new ColumnArray<MeshRendererTreeViewItem>();
+            columns.Add("Name", 200, item => item.displayName);
+            columns.Add("ScaleInLightmap", 60, item => item.m_ScaleInLightmap.floatValue, item => item.m_ScaleInLightmap);
+            columns.Add("PrioritizeIllumination", 50, item => item.m_ImportantGI.boolValue, item => item.m_ImportantGI);
+            columns.Add("StitchSeams", 50, item => item.m_StitchLightmapSeams.boolValue, item => item.m_StitchLightmapSeams);
 #if UNITY_2019_1_OR_NEWER
-            header.Add<System.Enum>("Receive GI", 80, item => (ReceiveGI)item.m_ReceiveGI.intValue, (item, value) => item.m_ReceiveGI.intValue = (int)(ReceiveGI)value, item => item.m_ReceiveGI);
+            columns.AddIntAsEnum("Receive GI", 80, item => (ReceiveGI)item.m_ReceiveGI.intValue, item => item.m_ReceiveGI);
 #endif
-            header.Add("Lightmap Index", 80, item => item.LightmapIndex);
-            m_TreeView = new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexLightmapStateKey, () => GetTreeViewItems(isLightmapStatic: true));
-            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
+            columns.Add("Lightmap Index", 80, item => item.LightmapIndex);
+            return columns.GetHeaderState();
         }
 
         IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems(bool isGameObject = false, bool isLightmapStatic = false)
@@ -239,7 +246,6 @@ namespace MomomaAssets
             var originalTextures = new HashSet<Texture>();
             var batchedMeshes = new HashSet<Mesh>();
             var meshRendererList = GetMeshRenderers();
-            var triangles = new List<int>();
             foreach (var mr in meshRendererList)
             {
                 var mesh = mr.GetComponent<MeshFilter>()?.sharedMesh;
@@ -295,39 +301,41 @@ namespace MomomaAssets
 
             internal bool LightmapStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.ContributeGI); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.ContributeGI); }
+                get => HasFlag(StaticEditorFlags.ContributeGI);
+                set => SetFlag(value, StaticEditorFlags.ContributeGI);
             }
             internal bool OccluderStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.OccluderStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.OccluderStatic); }
+                get => HasFlag(StaticEditorFlags.OccluderStatic);
+                set => SetFlag(value, StaticEditorFlags.OccluderStatic);
             }
             internal bool OccludeeStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.OccludeeStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.OccludeeStatic); }
+                get => HasFlag(StaticEditorFlags.OccludeeStatic);
+                set => SetFlag(value, StaticEditorFlags.OccludeeStatic);
             }
             internal bool BatchingStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.BatchingStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.BatchingStatic); }
+                get => HasFlag(StaticEditorFlags.BatchingStatic);
+                set => SetFlag(value, StaticEditorFlags.BatchingStatic);
             }
             internal bool NavigationStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.NavigationStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.NavigationStatic); }
+                get => HasFlag(StaticEditorFlags.NavigationStatic);
+                set => SetFlag(value, StaticEditorFlags.NavigationStatic);
             }
             internal bool OffMeshLinkGeneration
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.OffMeshLinkGeneration); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.OffMeshLinkGeneration); }
+                get => HasFlag(StaticEditorFlags.OffMeshLinkGeneration);
+                set => SetFlag(value, StaticEditorFlags.OffMeshLinkGeneration);
             }
             internal bool ReflectionProbeStatic
             {
-                get { return 0 < ((StaticEditorFlags)m_StaticEditorFlags.intValue & StaticEditorFlags.ReflectionProbeStatic); }
-                set { SetStaticFlag(value, (int)StaticEditorFlags.ReflectionProbeStatic); }
+                get => HasFlag(StaticEditorFlags.ReflectionProbeStatic);
+                set => SetFlag(value, StaticEditorFlags.ReflectionProbeStatic);
             }
+
+            static readonly int maxValue = Enum.GetValues(typeof(StaticEditorFlags)).Cast<int>().Aggregate((x, y) => x | y);
 
             readonly internal SerializedProperty m_Layer;
             readonly internal SerializedProperty m_StaticEditorFlags;
@@ -341,20 +349,30 @@ namespace MomomaAssets
                 m_StaticEditorFlags = serializedObject.FindProperty("m_StaticEditorFlags");
             }
 
-            void SetStaticFlag(bool active, int targetFlag)
+            public void DrawProperty(Rect rect, StaticEditorFlags flag)
             {
+                using (new EditorGUI.PropertyScope(rect, GUIContent.none, m_StaticEditorFlags))
+                {
+                    var value = HasFlag(flag);
+                    using (var check = new EditorGUI.ChangeCheckScope())
+                    {
+                        value = EditorGUI.Toggle(rect, value);
+                        if (check.changed)
+                            SetFlag(value, flag);
+                    }
+                }
+            }
+
+            bool HasFlag(StaticEditorFlags flag)
+                 => ((StaticEditorFlags)m_StaticEditorFlags.intValue & flag) != 0;
+
+            void SetFlag(bool active, StaticEditorFlags flag)
+            {
+                var flagInt = (int)flag;
                 var flags = m_StaticEditorFlags.intValue;
                 if (flags < 0)
-                {
-                    var allPossibleValues = 0;
-                    var values = System.Enum.GetValues(typeof(StaticEditorFlags));
-                    foreach (var value in values)
-                    {
-                        allPossibleValues |= (int)value;
-                    }
-                    flags = flags & allPossibleValues;
-                }
-                flags = active ? (flags | targetFlag) : (flags & ~targetFlag);
+                    flags &= maxValue;
+                flags = active ? (flags | flagInt) : (flags & ~flagInt);
                 m_StaticEditorFlags.intValue = flags;
             }
         }

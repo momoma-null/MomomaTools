@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
+using UnityEngine;
+using Column = UnityEditor.IMGUI.Controls.MultiColumnHeaderState.Column;
 
 namespace MomomaAssets
 {
@@ -14,9 +15,9 @@ namespace MomomaAssets
         ~UnityObjectTreeViewItem() => serializedObject?.Dispose();
     }
 
-    public sealed class MultiColumnHeaderMaker<T> where T : UnityObjectTreeViewItem
+    public sealed class ColumnArray<T> where T : UnityObjectTreeViewItem
     {
-        List<MultiColumnHeaderState.Column> columns = new List<MultiColumnHeaderState.Column>();
+        readonly List<Column> columns = new List<Column>();
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty)
             => Add(name, width, getValue, null, getProperty, null, TextAlignment.Left);
@@ -30,15 +31,21 @@ namespace MomomaAssets
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, TextAlignment fieldAlignment)
             => Add(name, width, getValue, null, null, null, fieldAlignment);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty)
-            => Add(name, width, getValue, setValue, getProperty, null, TextAlignment.Left);
+        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty)
+            => Add(name, width, getValue, onGUI, getProperty, null, TextAlignment.Left);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible)
-            => Add(name, width, getValue, setValue, getProperty, isVisible, TextAlignment.Left);
+        public void AddIntAsEnum<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty) where TValue : Enum
+            => Add(name, width, getValue, (r, item) => getProperty(item).EnumFieldFromInt<TValue>(r), getProperty, null, TextAlignment.Left);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
+        public void AddIntAsLayerMask(string name, float width, Func<T, LayerMask> getValue, Func<T, SerializedProperty> getProperty)
+            => Add(name, width, getValue, (r, item) => getProperty(item).LayerFieldFromInt(r), getProperty, null, TextAlignment.Left);
+
+        public void AddIntAsToggle(string name, float width, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible = null)
+            => Add(name, width, x => Convert.ToBoolean(getProperty(x).intValue), (r, item) => getProperty(item).ToggleFieldFromInt(r), getProperty, isVisible, TextAlignment.Left);
+
+        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
-            var column = new MultiColumn<T, TValue>(getValue, setValue, getProperty, isVisible, fieldAlignment)
+            var column = new MultiColumn<T, TValue>(getValue, onGUI, getProperty, isVisible, fieldAlignment)
             {
                 width = width,
                 minWidth = width * 0.5f,
@@ -49,30 +56,74 @@ namespace MomomaAssets
             columns.Add(column);
         }
 
-        public MultiColumnHeader GetHeader()
+        public MultiColumnHeaderState GetHeaderState() => new MultiColumnHeaderState(columns.ToArray());
+    }
+
+    public static class TreeViewItemExtensions
+    {
+        static class EnumCache<T> where T : Enum
         {
-            var header = new MultiColumnHeader(new MultiColumnHeaderState(columns.ToArray()));
-            columns.Clear();
-            return header;
+            public static string[] Names { get; }
+
+            static EnumCache()
+            {
+                Names = Enum.GetNames(typeof(T));
+            }
+        }
+
+        public static void EnumFieldFromInt<T>(this SerializedProperty property, Rect rect) where T : Enum
+        {
+            using (new EditorGUI.PropertyScope(rect, GUIContent.none, property))
+            {
+                using (var check = new EditorGUI.ChangeCheckScope())
+                {
+                    var newValue = EditorGUI.Popup(rect, property.intValue, EnumCache<T>.Names);
+                    if (check.changed)
+                        property.intValue = newValue;
+                }
+            }
+        }
+
+        public static void LayerFieldFromInt(this SerializedProperty property, Rect rect)
+        {
+            using (new EditorGUI.PropertyScope(rect, GUIContent.none, property))
+            {
+                using (var check = new EditorGUI.ChangeCheckScope())
+                {
+                    var newValue = EditorGUI.LayerField(rect, property.intValue);
+                    if (check.changed)
+                        property.intValue = newValue;
+                }
+            }
+        }
+
+        public static void ToggleFieldFromInt(this SerializedProperty property, Rect rect)
+        {
+            using (new EditorGUI.PropertyScope(rect, GUIContent.none, property))
+            {
+                using (var check = new EditorGUI.ChangeCheckScope())
+                {
+                    var newValue = EditorGUI.Toggle(rect, Convert.ToBoolean(property.intValue));
+                    if (check.changed)
+                        property.intValue = Convert.ToInt32(newValue);
+                }
+            }
         }
     }
 
-    sealed class MultiColumn<T, TValue> : MultiColumnHeaderState.Column, IMultiColumn<T> where T : UnityObjectTreeViewItem
+    sealed class MultiColumn<T, TValue> : Column, IMultiColumn<T> where T : UnityObjectTreeViewItem
     {
         public Func<T, TValue> GetValue { get; }
-        public Action<T, TValue> SetValue { get; }
         public Func<T, SerializedProperty> GetProperty { get; }
         public Func<T, bool> IsVisible { get; }
         public TextAnchor FieldAlignment { get; }
-        public bool HasCustomGUI { get; }
         public Comparison<T> Comparison { get; }
 
-        public MultiColumn(Func<T, TValue> getValue, Action<T, TValue> setValue, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
+        readonly Action<Rect, T> onGUI;
+
+        public MultiColumn(Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
-            if (getValue == null)
-                throw new ArgumentNullException(nameof(getValue));
-            GetValue = getValue;
-            SetValue = setValue;
+            GetValue = getValue ?? throw new ArgumentNullException(nameof(getValue));
             GetProperty = getProperty;
             IsVisible = isVisible;
             switch (fieldAlignment)
@@ -84,11 +135,28 @@ namespace MomomaAssets
                 case TextAlignment.Right:
                     FieldAlignment = TextAnchor.MiddleRight; break;
             }
-            HasCustomGUI = SetValue != null && GetValue != null;
             if (typeof(TValue) == typeof(LayerMask))
                 Comparison = (x, y) => (Comparer<LayerMask>.Create((z, w) => z.value.CompareTo(w.value)) as IComparer<TValue>).Compare(GetValue(x), GetValue(y));
             else
                 Comparison = (x, y) => Comparer<TValue>.Default.Compare(GetValue(x), GetValue(y));
+            if (getProperty != null)
+            {
+                if (onGUI != null)
+                {
+                    this.onGUI = onGUI;
+                }
+                else
+                {
+                    this.onGUI = OnPropertyGUI;
+                }
+            }
+        }
+
+        public void OnGUI(Rect rect, T item) => onGUI(rect, item);
+
+        void OnPropertyGUI(Rect rect, T item)
+        {
+            EditorGUI.PropertyField(rect, GetProperty(item), GUIContent.none);
         }
 
         public string GetLabel(T item) => GetValue(item).ToString();
@@ -96,12 +164,12 @@ namespace MomomaAssets
 
     interface IMultiColumn<T> where T : UnityObjectTreeViewItem
     {
-        bool HasCustomGUI { get; }
         Func<T, SerializedProperty> GetProperty { get; }
         Func<T, bool> IsVisible { get; }
         TextAnchor FieldAlignment { get; }
         Comparison<T> Comparison { get; }
         string GetLabel(T item);
+        void OnGUI(Rect rect, T item);
     }
 
     public abstract class UnityObjectTreeViewBase : TreeView
@@ -113,15 +181,13 @@ namespace MomomaAssets
 
     public sealed class UnityObjectTreeView<T> : UnityObjectTreeViewBase where T : UnityObjectTreeViewItem
     {
-        public UnityObjectTreeView(TreeViewState state, MultiColumnHeader multiColumnHeader, string sortedColumnIndexStateKey, Func<IEnumerable<TreeViewItem>> GetItems, Action<T> ModifiedItem = null, bool canUndo = true) : base(state, multiColumnHeader)
+        public UnityObjectTreeView(TreeViewState state, MultiColumnHeaderState multiColumnHeaderState, Func<IEnumerable<TreeViewItem>> GetItems, Action<T> ModifiedItem = null, bool canUndo = true) : base(state, new MultiColumnHeader(multiColumnHeaderState))
         {
             showAlternatingRowBackgrounds = true;
             showBorder = true;
             rowHeight = EditorGUIUtility.singleLineHeight;
             multiColumnHeader.sortingChanged += OnSortingChanged;
             multiColumnHeader.visibleColumnsChanged += OnVisibleColumnChanged;
-            multiColumnHeader.sortedColumnIndex = SessionState.GetInt(sortedColumnIndexStateKey, -1);
-            this.sortedColumnIndexStateKey = sortedColumnIndexStateKey;
             this.GetItems = GetItems;
             this.ModifiedItem = ModifiedItem;
             this.canUndo = canUndo;
@@ -129,7 +195,6 @@ namespace MomomaAssets
             Reload();
         }
 
-        readonly string sortedColumnIndexStateKey;
         readonly Func<IEnumerable<TreeViewItem>> GetItems;
         readonly Action<T> ModifiedItem;
         readonly bool canUndo;
@@ -190,52 +255,11 @@ namespace MomomaAssets
                     var sp = column.GetProperty(item);
                     if (column.IsVisible == null || column.IsVisible(item))
                     {
-                        if (!column.HasCustomGUI)
+                        using (var check = new EditorGUI.ChangeCheckScope())
                         {
-                            using (var check = new EditorGUI.ChangeCheckScope())
-                            {
-                                EditorGUI.PropertyField(rect, sp, GUIContent.none);
-                                if (check.changed)
-                                {
-                                    CopyToSelection(item.id, sp);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            using (new EditorGUI.PropertyScope(rect, GUIContent.none, sp))
-                            using (var check = new EditorGUI.ChangeCheckScope())
-                            {
-                                switch (column)
-                                {
-                                    case MultiColumn<T, bool> boolColumn:
-                                        var newBool = EditorGUI.Toggle(rect, boolColumn.GetValue(item));
-                                        if (check.changed)
-                                        {
-                                            boolColumn.SetValue(item, newBool);
-                                            CopyToSelection(item.id, sp);
-                                        }
-                                        break;
-                                    case MultiColumn<T, Enum> enumColumn:
-                                        var newEnum = EditorGUI.EnumPopup(rect, enumColumn.GetValue(item));
-                                        if (check.changed)
-                                        {
-                                            enumColumn.SetValue(item, newEnum);
-                                            CopyToSelection(item.id, sp);
-                                        }
-                                        break;
-                                    case MultiColumn<T, LayerMask> layerColumn:
-                                        var newLayer = EditorGUI.LayerField(rect, layerColumn.GetValue(item));
-                                        if (check.changed)
-                                        {
-                                            layerColumn.SetValue(item, newLayer);
-                                            CopyToSelection(item.id, sp);
-                                        }
-                                        break;
-                                    default:
-                                        throw new InvalidOperationException("column value is unknown type");
-                                }
-                            }
+                            column.OnGUI(rect, item);
+                            if (check.changed)
+                                CopyToSelection(item.id, sp);
                         }
                     }
                 }
@@ -293,7 +317,6 @@ namespace MomomaAssets
             var index = multiColumnHeader.sortedColumnIndex;
             if (index < 0)
                 return;
-            SessionState.SetInt(sortedColumnIndexStateKey, index);
             if (rows == null || rows.Count == 0)
                 return;
             var column = multiColumnHeader.GetColumn(index) as IMultiColumn<T>;

@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEditor;
 using UnityEditor.IMGUI.Controls;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityObject = UnityEngine.Object;
 
 namespace MomomaAssets
@@ -26,14 +26,13 @@ namespace MomomaAssets
             _8192 = 8192
         }
 
-        const string searchStringStateKey = "TextureExplorerTreeViewWindow_SearchString";
-        const string sortedColumnIndexStateKey = "TextureExplorerTreeViewWindow_sortedColumnIndex";
-
         static readonly Type s_TextureUtilType = Type.GetType("UnityEditor.TextureUtil, UnityEditor.dll");
         static readonly Dictionary<string, MethodInfo> s_TextureUtilInfos = new Dictionary<string, MethodInfo>();
 
         [SerializeField]
         TreeViewState m_ViewState = new TreeViewState();
+        [SerializeField]
+        MultiColumnHeaderState headerState = GetHeaderState();
 
         SearchField m_SearchField;
         UnityObjectTreeViewBase m_TreeView;
@@ -41,7 +40,7 @@ namespace MomomaAssets
         [MenuItem("MomomaTools/Texture Explorer", false, 110)]
         static void ShowWindow()
         {
-            EditorWindow.GetWindow<TextureExplorer>("Texture Explorer");
+            GetWindow<TextureExplorer>("Texture Explorer");
         }
 
         static MethodInfo GetMethod(string methodName)
@@ -109,14 +108,13 @@ namespace MomomaAssets
                 using (new EditorGUILayout.VerticalScope())
                 {
                     if (m_TreeView == null)
-                        Initialize();
+                        m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(m_ViewState, headerState, GetTreeViewItems, item => item.ImportAsset(), false);
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         EditorGUI.BeginChangeCheck();
                         var searchString = m_SearchField.OnToolbarGUI(m_TreeView.searchString);
                         if (EditorGUI.EndChangeCheck())
                         {
-                            SessionState.SetString(searchStringStateKey, searchString);
                             m_TreeView.searchString = searchString;
                         }
                     }
@@ -128,26 +126,25 @@ namespace MomomaAssets
             EditorGUILayout.Space();
         }
 
-        void Initialize()
+        static MultiColumnHeaderState GetHeaderState()
         {
-            var header = new MultiColumnHeaderMaker<TextureTreeViewItem>();
-            header.Add("Name", 200, item => item.displayName);
-            header.Add("Width", 50, item => item.width, TextAlignment.Right);
-            header.Add("Height", 50, item => item.height, TextAlignment.Right);
-            header.Add("Memory Size", 80, item => item.memorySize, TextAlignment.Right);
-            header.Add<System.Enum>("Max Texture Size", 60, item => (MaxTextureSize)item.m_MaxTextureSize.intValue, (item, value) => item.m_MaxTextureSize.intValue = (int)(MaxTextureSize)value, item => item.m_MaxTextureSize);
-            header.Add<System.Enum>("Texture Type", 80, item => (TextureImporterType)item.m_TextureType.intValue, (item, value) => item.m_TextureType.intValue = (int)(TextureImporterType)value, item => item.m_TextureType);
-            header.Add("sRGB", 50, item => Convert.ToBoolean(item.m_sRGBTexture.intValue), (item, value) => item.m_sRGBTexture.intValue = Convert.ToInt32(value), item => item.m_sRGBTexture, item => item.m_TextureType.intValue == 0);
-            header.Add<System.Enum>("Alpha Source", 80, item => (TextureImporterAlphaSource)item.m_AlphaUsage.intValue, (item, value) => item.m_AlphaUsage.intValue = (int)(TextureImporterAlphaSource)value, item => item.m_AlphaUsage);
-            header.Add("Transparency", 50, item => Convert.ToBoolean(item.m_AlphaUsage.intValue), (item, value) => item.m_AlphaIsTransparency.intValue = Convert.ToInt32(value), item => item.m_AlphaIsTransparency, item => item.m_AlphaUsage.intValue > 0);
-            header.Add("Mip Map", 50, item => Convert.ToBoolean(item.m_EnableMipMap.intValue), (item, value) => item.m_EnableMipMap.intValue = Convert.ToInt32(value), item => item.m_EnableMipMap);
-            header.Add("Preserve Coverage", 50, item => Convert.ToBoolean(item.m_MipMapsPreserveCoverage.intValue), (item, value) => item.m_MipMapsPreserveCoverage.intValue = Convert.ToInt32(value), item => item.m_MipMapsPreserveCoverage, item => item.m_EnableMipMap.intValue == 1);
-            header.Add("Alpha Cutoff Value", 60, item => item.m_AlphaTestReferenceValue.floatValue, item => item.m_AlphaTestReferenceValue, item => item.m_EnableMipMap.intValue == 1 && item.m_MipMapsPreserveCoverage.intValue == 1);
-            header.Add("Readable", 50, item => Convert.ToBoolean(item.m_IsReadable.intValue), (item, value) => item.m_IsReadable.intValue = Convert.ToInt32(value), item => item.m_IsReadable);
-            header.Add("Crunched Compression", 50, item => item.m_CrunchedCompression.boolValue, item => item.m_CrunchedCompression);
-            header.Add("Compression Quality", 60, item => item.m_CompressionQuality.intValue, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
-            m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(m_ViewState, header.GetHeader(), sortedColumnIndexStateKey, () => GetTreeViewItems(), item => item.ImportAsset(), false);
-            m_TreeView.searchString = SessionState.GetString(searchStringStateKey, "");
+            var columns = new ColumnArray<TextureTreeViewItem>();
+            columns.Add("Name", 200, item => item.displayName);
+            columns.Add("Width", 50, item => item.width, TextAlignment.Right);
+            columns.Add("Height", 50, item => item.height, TextAlignment.Right);
+            columns.Add("Memory Size", 80, item => item.memorySize, TextAlignment.Right);
+            columns.AddIntAsEnum("Max Texture Size", 60, item => (MaxTextureSize)item.m_MaxTextureSize.intValue, item => item.m_MaxTextureSize);
+            columns.AddIntAsEnum("Texture Type", 80, item => (TextureImporterType)item.m_TextureType.intValue, item => item.m_TextureType);
+            columns.AddIntAsToggle("sRGB", 50, item => item.m_sRGBTexture, item => item.m_TextureType.intValue == 0);
+            columns.AddIntAsEnum("Alpha Source", 80, item => (TextureImporterAlphaSource)item.m_AlphaUsage.intValue, item => item.m_AlphaUsage);
+            columns.AddIntAsToggle("Transparency", 50, item => item.m_AlphaIsTransparency, item => item.m_AlphaUsage.intValue > 0);
+            columns.AddIntAsToggle("Mip Map", 50, item => item.m_EnableMipMap);
+            columns.AddIntAsToggle("Preserve Coverage", 50, item => item.m_MipMapsPreserveCoverage, item => item.m_EnableMipMap.intValue == 1);
+            columns.Add("Alpha Cutoff Value", 60, item => item.m_AlphaTestReferenceValue.floatValue, item => item.m_AlphaTestReferenceValue, item => item.m_EnableMipMap.intValue == 1 && item.m_MipMapsPreserveCoverage.intValue == 1);
+            columns.AddIntAsToggle("Readable", 50, item => item.m_IsReadable);
+            columns.Add("Crunched Compression", 50, item => item.m_CrunchedCompression.boolValue, item => item.m_CrunchedCompression);
+            columns.Add("Compression Quality", 60, item => item.m_CompressionQuality.intValue, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
+            return columns.GetHeaderState();
         }
 
         IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems()
