@@ -164,7 +164,7 @@ namespace MomomaAssets
         {
             var columns = new ColumnArray<GameObjectTreeViewItem>();
             columns.Add("Name", 200, item => item.displayName);
-            columns.AddIntAsLayerMask("Layer", 80, item => item.m_Layer.intValue, item => item.m_Layer);
+            columns.AddIntAsLayerMask("Layer", 80, item => item.m_Layer);
             columns.Add("GI", 50, item => item.LightmapStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ContributeGI), item => item.m_StaticEditorFlags);
             columns.Add("Occluder", 50, item => item.OccluderStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccluderStatic), item => item.m_StaticEditorFlags);
             columns.Add("Occludee", 50, item => item.OccludeeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccludeeStatic), item => item.m_StaticEditorFlags);

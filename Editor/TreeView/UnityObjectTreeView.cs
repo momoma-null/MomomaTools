@@ -37,11 +37,11 @@ namespace MomomaAssets
         public void AddIntAsEnum<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty) where TValue : Enum
             => Add(name, width, getValue, (r, item) => getProperty(item).EnumFieldFromInt<TValue>(r), getProperty, null, TextAlignment.Left);
 
-        public void AddIntAsLayerMask(string name, float width, Func<T, LayerMask> getValue, Func<T, SerializedProperty> getProperty)
-            => Add(name, width, getValue, (r, item) => getProperty(item).LayerFieldFromInt(r), getProperty, null, TextAlignment.Left);
+        public void AddIntAsLayerMask(string name, float width, Func<T, SerializedProperty> getProperty)
+            => Add(name, width, item => getProperty(item).intValue, (r, item) => getProperty(item).LayerFieldFromInt(r), getProperty, null, TextAlignment.Left);
 
         public void AddIntAsToggle(string name, float width, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible = null)
-            => Add(name, width, x => Convert.ToBoolean(getProperty(x).intValue), (r, item) => getProperty(item).ToggleFieldFromInt(r), getProperty, isVisible, TextAlignment.Left);
+            => Add(name, width, item => Convert.ToBoolean(getProperty(item).intValue), (r, item) => getProperty(item).ToggleFieldFromInt(r), getProperty, isVisible, TextAlignment.Left);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
@@ -113,63 +113,63 @@ namespace MomomaAssets
 
     sealed class MultiColumn<T, TValue> : Column, IMultiColumn<T> where T : UnityObjectTreeViewItem
     {
-        public Func<T, TValue> GetValue { get; }
-        public Func<T, SerializedProperty> GetProperty { get; }
-        public Func<T, bool> IsVisible { get; }
-        public TextAnchor FieldAlignment { get; }
         public Comparison<T> Comparison { get; }
 
+        readonly Func<T, TValue> getValue;
+        readonly Func<T, SerializedProperty> getProperty;
         readonly Action<Rect, T> onGUI;
+        readonly Func<T, bool> isVisible;
+        readonly TextAnchor fieldAlignment;
 
         public MultiColumn(Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
-            GetValue = getValue ?? throw new ArgumentNullException(nameof(getValue));
-            GetProperty = getProperty;
-            IsVisible = isVisible;
+            this.getValue = getValue ?? throw new ArgumentNullException(nameof(getValue));
+            this.getProperty = getProperty;
+            this.isVisible = isVisible;
+            this.onGUI = onGUI;
             switch (fieldAlignment)
             {
                 case TextAlignment.Left:
-                    FieldAlignment = TextAnchor.MiddleLeft; break;
+                    this.fieldAlignment = TextAnchor.MiddleLeft; break;
                 case TextAlignment.Center:
-                    FieldAlignment = TextAnchor.MiddleCenter; break;
+                    this.fieldAlignment = TextAnchor.MiddleCenter; break;
                 case TextAlignment.Right:
-                    FieldAlignment = TextAnchor.MiddleRight; break;
+                    this.fieldAlignment = TextAnchor.MiddleRight; break;
             }
-            if (typeof(TValue) == typeof(LayerMask))
-                Comparison = (x, y) => (Comparer<LayerMask>.Create((z, w) => z.value.CompareTo(w.value)) as IComparer<TValue>).Compare(GetValue(x), GetValue(y));
-            else
-                Comparison = (x, y) => Comparer<TValue>.Default.Compare(GetValue(x), GetValue(y));
-            if (getProperty != null)
-            {
-                if (onGUI != null)
-                {
-                    this.onGUI = onGUI;
-                }
-                else
-                {
-                    this.onGUI = OnPropertyGUI;
-                }
-            }
+            Comparison = (x, y) => Comparer<TValue>.Default.Compare(getValue(x), getValue(y));
         }
 
-        public void OnGUI(Rect rect, T item) => onGUI(rect, item);
-
-        void OnPropertyGUI(Rect rect, T item)
+        public void DrawField(Rect rect, T item, GUIStyle style)
         {
-            EditorGUI.PropertyField(rect, GetProperty(item), GUIContent.none);
+            if (getProperty == null)
+            {
+                style.alignment = fieldAlignment;
+                EditorGUI.LabelField(rect, getValue(item).ToString(), style);
+            }
+            else
+            {
+                if (isVisible == null || isVisible(item))
+                {
+                    if (onGUI != null)
+                    {
+                        onGUI(rect, item);
+                    }
+                    else
+                    {
+                        EditorGUI.PropertyField(rect, getProperty(item), GUIContent.none);
+                    }
+                }
+            }
         }
 
-        public string GetLabel(T item) => GetValue(item).ToString();
+        public SerializedProperty GetProperty(T item) => getProperty.Invoke(item);
     }
 
     interface IMultiColumn<T> where T : UnityObjectTreeViewItem
     {
-        Func<T, SerializedProperty> GetProperty { get; }
-        Func<T, bool> IsVisible { get; }
-        TextAnchor FieldAlignment { get; }
         Comparison<T> Comparison { get; }
-        string GetLabel(T item);
-        void OnGUI(Rect rect, T item);
+        void DrawField(Rect rect, T item, GUIStyle style);
+        SerializedProperty GetProperty(T item);
     }
 
     public abstract class UnityObjectTreeViewBase : TreeView
@@ -244,24 +244,11 @@ namespace MomomaAssets
                 CenterRectUsingSingleLineHeight(ref rect);
                 var columnIndex = args.GetColumn(visibleColumnIndex);
                 var column = multiColumnHeader.GetColumn(columnIndex) as IMultiColumn<T>;
-
-                if (column.GetProperty == null)
+                using (var check = new EditorGUI.ChangeCheckScope())
                 {
-                    labelStyle.alignment = column.FieldAlignment;
-                    EditorGUI.LabelField(rect, column.GetLabel(item), labelStyle);
-                }
-                else
-                {
-                    var sp = column.GetProperty(item);
-                    if (column.IsVisible == null || column.IsVisible(item))
-                    {
-                        using (var check = new EditorGUI.ChangeCheckScope())
-                        {
-                            column.OnGUI(rect, item);
-                            if (check.changed)
-                                CopyToSelection(item.id, sp);
-                        }
-                    }
+                    column.DrawField(rect, item, labelStyle);
+                    if (check.changed)
+                        CopyToSelection(item.id, column.GetProperty(item));
                 }
             }
             if (canUndo ? item.serializedObject.ApplyModifiedProperties() : item.serializedObject.ApplyModifiedPropertiesWithoutUndo())
