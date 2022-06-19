@@ -18,34 +18,35 @@ namespace MomomaAssets
     public sealed class ColumnArray<T> where T : UnityObjectTreeViewItem
     {
         readonly List<Column> columns = new List<Column>();
+        readonly static Func<SerializedProperty, T, bool> defaultCopyProperty = (from, to) => to.serializedObject.CopyFromSerializedPropertyIfDifferent(from);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty)
-            => Add(name, width, getValue, null, getProperty, null, TextAlignment.Left);
+            => Add(name, width, getValue, null, getProperty, defaultCopyProperty, null, TextAlignment.Left);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible)
-            => Add(name, width, getValue, null, getProperty, isVisible, TextAlignment.Left);
+            => Add(name, width, getValue, null, getProperty, defaultCopyProperty, isVisible, TextAlignment.Left);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue)
-            => Add(name, width, getValue, null, null, null, TextAlignment.Left);
+            => Add(name, width, getValue, null, null, null, null, TextAlignment.Left);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, TextAlignment fieldAlignment)
-            => Add(name, width, getValue, null, null, null, fieldAlignment);
+            => Add(name, width, getValue, null, null, null, null, fieldAlignment);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty)
-            => Add(name, width, getValue, onGUI, getProperty, null, TextAlignment.Left);
+        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<SerializedProperty, T, bool> copyProperty)
+            => Add(name, width, getValue, onGUI, getProperty, copyProperty, null, TextAlignment.Left);
 
         public void AddIntAsEnum<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty) where TValue : Enum
-            => Add(name, width, getValue, (r, item) => getProperty(item).EnumFieldFromInt<TValue>(r), getProperty, null, TextAlignment.Left);
+            => Add(name, width, getValue, (r, item) => getProperty(item).EnumFieldFromInt<TValue>(r), getProperty, defaultCopyProperty, null, TextAlignment.Left);
 
         public void AddIntAsLayerMask(string name, float width, Func<T, SerializedProperty> getProperty)
-            => Add(name, width, item => getProperty(item).intValue, (r, item) => getProperty(item).LayerFieldFromInt(r), getProperty, null, TextAlignment.Left);
+            => Add(name, width, item => getProperty(item).intValue, (r, item) => getProperty(item).LayerFieldFromInt(r), getProperty, defaultCopyProperty, null, TextAlignment.Left);
 
         public void AddIntAsToggle(string name, float width, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible = null)
-            => Add(name, width, item => Convert.ToBoolean(getProperty(item).intValue), (r, item) => getProperty(item).ToggleFieldFromInt(r), getProperty, isVisible, TextAlignment.Left);
+            => Add(name, width, item => Convert.ToBoolean(getProperty(item).intValue), (r, item) => getProperty(item).ToggleFieldFromInt(r), getProperty, defaultCopyProperty, isVisible, TextAlignment.Left);
 
-        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
+        public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<SerializedProperty, T, bool> copyProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
-            var column = new MultiColumn<T, TValue>(getValue, onGUI, getProperty, isVisible, fieldAlignment)
+            var column = new MultiColumn<T, TValue>(getValue, onGUI, getProperty, copyProperty, isVisible, fieldAlignment)
             {
                 width = width,
                 minWidth = width * 0.5f,
@@ -117,14 +118,16 @@ namespace MomomaAssets
 
         readonly Func<T, TValue> getValue;
         readonly Func<T, SerializedProperty> getProperty;
+        readonly Func<SerializedProperty, T, bool> copyProperty;
         readonly Action<Rect, T> onGUI;
         readonly Func<T, bool> isVisible;
         readonly TextAnchor fieldAlignment;
 
-        public MultiColumn(Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
+        public MultiColumn(Func<T, TValue> getValue, Action<Rect, T> onGUI, Func<T, SerializedProperty> getProperty, Func<SerializedProperty, T, bool> copyProperty, Func<T, bool> isVisible, TextAlignment fieldAlignment)
         {
             this.getValue = getValue ?? throw new ArgumentNullException(nameof(getValue));
             this.getProperty = getProperty;
+            this.copyProperty = copyProperty;
             this.isVisible = isVisible;
             this.onGUI = onGUI;
             switch (fieldAlignment)
@@ -163,6 +166,8 @@ namespace MomomaAssets
         }
 
         public SerializedProperty GetProperty(T item) => getProperty.Invoke(item);
+
+        public bool CopyProperty(SerializedProperty from, T to) => copyProperty.Invoke(from, to);
     }
 
     interface IMultiColumn<T> where T : UnityObjectTreeViewItem
@@ -170,6 +175,7 @@ namespace MomomaAssets
         Comparison<T> Comparison { get; }
         void DrawField(Rect rect, T item, GUIStyle style);
         SerializedProperty GetProperty(T item);
+        bool CopyProperty(SerializedProperty from, T to);
     }
 
     public abstract class UnityObjectTreeViewBase : TreeView
@@ -248,35 +254,34 @@ namespace MomomaAssets
                 {
                     column.DrawField(rect, item, labelStyle);
                     if (check.changed)
-                        CopyToSelection(item.id, column.GetProperty(item));
+                    {
+                        var id = item.id;
+                        var ids = GetSelection();
+                        if (ids.Contains(id))
+                        {
+                            var sp = column.GetProperty(item);
+                            var rows = FindRows(ids);
+                            foreach (T r in rows)
+                            {
+                                if (r.id == id)
+                                    continue;
+                                var so = r.serializedObject;
+                                so.Update();
+                                if (column.CopyProperty(sp, r))
+                                {
+                                    if (canUndo)
+                                        so.ApplyModifiedProperties();
+                                    else
+                                        so.ApplyModifiedPropertiesWithoutUndo();
+                                    ModifiedItem?.Invoke(r);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (canUndo ? item.serializedObject.ApplyModifiedProperties() : item.serializedObject.ApplyModifiedPropertiesWithoutUndo())
                 ModifiedItem?.Invoke(item);
-        }
-
-        void CopyToSelection(int id, SerializedProperty sp)
-        {
-            var ids = GetSelection();
-            if (ids.Contains(id))
-            {
-                var rows = FindRows(ids);
-                foreach (T r in rows)
-                {
-                    if (r.id == id)
-                        continue;
-                    var so = r.serializedObject;
-                    so.Update();
-                    if (so.CopyFromSerializedPropertyIfDifferent(sp))
-                    {
-                        if (canUndo)
-                            so.ApplyModifiedProperties();
-                        else
-                            so.ApplyModifiedPropertiesWithoutUndo();
-                        ModifiedItem?.Invoke(r);
-                    }
-                }
-            }
         }
 
         protected override void SelectionChanged(IList<int> selectedIDs)

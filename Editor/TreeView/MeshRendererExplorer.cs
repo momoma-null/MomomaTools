@@ -10,7 +10,6 @@ using UnityEngine.SceneManagement;
 
 namespace MomomaAssets
 {
-
     class MeshRendererExplorer : EditorWindow
     {
         static class Styles
@@ -18,7 +17,6 @@ namespace MomomaAssets
             public static GUIStyle largeButton = "LargeButton";
             public static GUIContent rootGameObject = EditorGUIUtility.TrTextContent("Root GameObject");
             public static GUIContent includeInactiveGameObject = EditorGUIUtility.TrTextContent("Include Inactive GameObject");
-
         }
 
         static readonly string[] s_TabNames = new string[] { "Count", "Static", "Lighting", "Lightmap" };
@@ -165,13 +163,13 @@ namespace MomomaAssets
             var columns = new ColumnArray<GameObjectTreeViewItem>();
             columns.Add("Name", 200, item => item.displayName);
             columns.AddIntAsLayerMask("Layer", 80, item => item.m_Layer);
-            columns.Add("GI", 50, item => item.LightmapStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ContributeGI), item => item.m_StaticEditorFlags);
-            columns.Add("Occluder", 50, item => item.OccluderStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccluderStatic), item => item.m_StaticEditorFlags);
-            columns.Add("Occludee", 50, item => item.OccludeeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccludeeStatic), item => item.m_StaticEditorFlags);
-            columns.Add("Batching", 50, item => item.BatchingStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.BatchingStatic), item => item.m_StaticEditorFlags);
-            columns.Add("Navigation", 50, item => item.NavigationStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.NavigationStatic), item => item.m_StaticEditorFlags);
-            columns.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (r, item) => item.DrawProperty(r, StaticEditorFlags.OffMeshLinkGeneration), item => item.m_StaticEditorFlags);
-            columns.Add("Reflection", 50, item => item.ReflectionProbeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ReflectionProbeStatic), item => item.m_StaticEditorFlags);
+            columns.Add("GI", 50, item => item.LightmapStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ContributeGI), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.ContributeGI, from));
+            columns.Add("Occluder", 50, item => item.OccluderStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccluderStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OccluderStatic, from));
+            columns.Add("Occludee", 50, item => item.OccludeeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccludeeStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OccludeeStatic, from));
+            columns.Add("Batching", 50, item => item.BatchingStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.BatchingStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.BatchingStatic, from));
+            columns.Add("Navigation", 50, item => item.NavigationStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.NavigationStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.NavigationStatic, from));
+            columns.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (r, item) => item.DrawProperty(r, StaticEditorFlags.OffMeshLinkGeneration), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OffMeshLinkGeneration, from));
+            columns.Add("Reflection", 50, item => item.ReflectionProbeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ReflectionProbeStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.ReflectionProbeStatic, from));
             return columns.GetHeaderState();
         }
 
@@ -363,6 +361,14 @@ namespace MomomaAssets
                 }
             }
 
+            public bool CopyFrom(StaticEditorFlags flag, SerializedProperty src)
+            {
+                if (src.intValue == m_StaticEditorFlags.intValue)
+                    return false;
+                SetFlag((((StaticEditorFlags)src.intValue & flag) != 0), flag);
+                return true;
+            }
+
             bool HasFlag(StaticEditorFlags flag)
                  => ((StaticEditorFlags)m_StaticEditorFlags.intValue & flag) != 0;
 
@@ -416,5 +422,4 @@ namespace MomomaAssets
             }
         }
     }
-
 }// namespace MomomaAssets
