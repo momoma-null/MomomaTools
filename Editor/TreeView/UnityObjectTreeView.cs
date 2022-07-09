@@ -62,25 +62,15 @@ namespace MomomaAssets
 
     public static class TreeViewItemExtensions
     {
-        static class EnumCache<T> where T : Enum
-        {
-            public static string[] Names { get; }
-
-            static EnumCache()
-            {
-                Names = Enum.GetNames(typeof(T));
-            }
-        }
-
-        public static void EnumFieldFromInt<T>(this SerializedProperty property, Rect rect) where T : Enum
+        public static void EnumFieldFromInt<T>(this SerializedProperty property, Rect rect) where T : Enum, IConvertible
         {
             using (new EditorGUI.PropertyScope(rect, GUIContent.none, property))
             {
                 using (var check = new EditorGUI.ChangeCheckScope())
                 {
-                    var newValue = EditorGUI.Popup(rect, property.intValue, EnumCache<T>.Names);
+                    var newValue = (T)EditorGUI.EnumPopup(rect, (T)(object)property.intValue);
                     if (check.changed)
-                        property.intValue = newValue;
+                        property.intValue = newValue.ToInt32(null);
                 }
             }
         }
