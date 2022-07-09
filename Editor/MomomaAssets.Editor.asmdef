@@ -3,7 +3,6 @@
     "references": [
         "MomomaAssets"
     ],
-    "optionalUnityReferences": [],
     "includePlatforms": [
         "Editor"
     ],
@@ -12,5 +11,13 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": []
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.vrcsdk3",
+            "expression": "",
+            "define": "VRC_SDK_WORLD"
+        }
+    ],
+    "noEngineReferences": false
 }
