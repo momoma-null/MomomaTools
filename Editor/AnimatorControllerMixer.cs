@@ -4,7 +4,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
-#if VRC_SDK_VRCSDK3
+#if VRC_SDK_VRCSDK3 && !VRC_SDK_WORLD
 using VRC.SDK3.Avatars.Components;
 #endif
 using ReorderableList = UnityEditorInternal.ReorderableList;
@@ -306,7 +306,7 @@ namespace MomomaAssets
             if (graph.IsValid())
                 graph.Destroy();
             mixerPlayable = AnimationPlayableUtilities.PlayLayerMixer(previewAnimator, 0, out graph);
-#if VRC_SDK_VRCSDK3
+#if VRC_SDK_VRCSDK3 && !VRC_SDK_WORLD
             var avatarDescriptor = previewAnimator.GetComponent<VRCAvatarDescriptor>();
             if (avatarDescriptor != null)
             {
@@ -327,7 +327,7 @@ namespace MomomaAssets
             UpdatePlaying();
         }
 
-#if VRC_SDK_VRCSDK3
+#if VRC_SDK_VRCSDK3 && !VRC_SDK_WORLD
         static RuntimeAnimatorController GetDefaultController(VRCAvatarDescriptor.AnimLayerType animLayerType)
         {
             switch (animLayerType)

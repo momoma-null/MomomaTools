@@ -325,101 +325,64 @@ namespace MomomaAssets
             public override void OnInspectorGUI()
             {
                 serializedObject.Update();
-                var isInitial = true;
                 using (var sp = serializedObject.GetIterator())
                 {
-                    while (true)
+                    if (sp.Next(true))
                     {
-                        using (var copy = sp.Copy())
-                        {
-                            if (!sp.Next(isInitial))
-                                break;
-                            copy.NextVisible(isInitial);
-                            using (new EditorGUI.DisabledScope(!SerializedProperty.EqualContents(sp, copy)))
-                            {
-                                PropertyFieldRecursive(sp);
-                            }
-                        }
-                        isInitial = false;
+                        while (PropertyFieldRecursive(sp)) { }
                     }
                 }
                 serializedObject.ApplyModifiedProperties();
             }
 
-            void PropertyFieldRecursive(SerializedProperty sp)
+            bool PropertyFieldRecursive(SerializedProperty sp)
             {
-                if (sp.propertyType == SerializedPropertyType.Generic)
+                using (new EditorGUI.DisabledScope(!sp.editable))
                 {
-                    if (sp.hasChildren)
+                    EditorGUI.BeginChangeCheck();
+                    var isExpanded = EditorGUILayout.PropertyField(sp, false);
+                    if (EditorGUI.EndChangeCheck() && Event.current.alt)
                     {
-                        using (var check = new EditorGUI.ChangeCheckScope())
+                        using (var search = sp.Copy())
+                        using (var end = search.GetEndProperty(true))
                         {
-                            var expanded = EditorGUILayout.Foldout(sp.isExpanded, sp.displayName, true);
-                            if (check.changed)
+                            while (search.Next(true) && !SerializedProperty.EqualContents(search, end))
                             {
-                                sp.isExpanded = expanded;
-                                if (Event.current.alt)
+                                if (search.hasChildren)
                                 {
-                                    using (var search = sp.Copy())
-                                    using (var end = search.GetEndProperty(true))
-                                    {
-                                        while (search.Next(true) && !SerializedProperty.EqualContents(search, end))
-                                        {
-                                            if (search.hasChildren)
-                                            {
-                                                search.isExpanded = expanded;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if (expanded)
-                            {
-                                using (var child = sp.Copy())
-                                using (var end = child.GetEndProperty(true))
-                                {
-                                    if (child.Next(true))
-                                    {
-                                        using (new EditorGUI.IndentLevelScope(1))
-                                        using (new EditorGUI.DisabledScope(!sp.hasVisibleChildren))
-                                        {
-                                            if (sp.isArray)
-                                            {
-                                                while (child.propertyType != SerializedPropertyType.ArraySize)
-                                                {
-                                                    child.Next(true);
-                                                }
-                                                EditorGUILayout.PropertyField(child);
-                                                child.Next(false);
-                                            }
-                                            var count = 0;
-                                            while (!SerializedProperty.EqualContents(child, end))
-                                            {
-                                                PropertyFieldRecursive(child);
-                                                if (!child.Next(false))
-                                                    break;
-                                                if (++count > 100)
-                                                {
-                                                    EditorGUILayout.HelpBox("The 100th and subsequent elements are omitted.", MessageType.Info);
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
+                                    search.isExpanded = isExpanded;
                                 }
                             }
                         }
                     }
+                    if (isExpanded)
+                    {
+                        var copy = sp.Copy();
+                        if (sp.Next(true))
+                        {
+                            using (new EditorGUI.IndentLevelScope(1))
+                            {
+                                if (copy.isArray)
+                                {
+                                    while (sp.propertyType != SerializedPropertyType.ArraySize)
+                                    {
+                                        sp.Next(true);
+                                    }
+                                }
+                                var endProperty = copy.GetEndProperty(true);
+                                while (!SerializedProperty.EqualContents(sp, endProperty))
+                                {
+                                    if (!PropertyFieldRecursive(sp))
+                                        return false;
+                                }
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
                     else
                     {
-                        EditorGUILayout.PropertyField(sp);
-                    }
-                }
-                else
-                {
-                    using (new EditorGUI.DisabledScope(!sp.editable))
-                    {
-                        EditorGUILayout.PropertyField(sp, true);
+                        return sp.Next(false);
                     }
                 }
             }
