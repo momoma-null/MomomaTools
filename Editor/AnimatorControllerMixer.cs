@@ -50,7 +50,7 @@ namespace MomomaAssets
         [SerializeField]
         List<AnimatorControllerInfo> animatorControllers = new List<AnimatorControllerInfo>() { new AnimatorControllerInfo() };
         [SerializeField]
-        List<RuntimeAnimatorController> currentAnimatorControllers = new List<RuntimeAnimatorController>();
+        List<RuntimeAnimatorController> currentAnimatorControllers = new List<RuntimeAnimatorController>() { null };
         [SerializeField]
         bool isPlaying;
         [SerializeField]
