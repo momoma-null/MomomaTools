@@ -23,6 +23,7 @@ namespace MomomaAssets
         static readonly IDictionary s_kSCustomEditors = s_CustomEditorAttributesType.GetField("kSCustomEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
         static readonly IDictionary s_kSCustomMultiEditors = s_CustomEditorAttributesType.GetField("kSCustomMultiEditors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null) as IDictionary;
         static readonly Type s_MonoEditorTypeType = s_CustomEditorAttributesType.GetNestedType("MonoEditorType", BindingFlags.NonPublic);
+        static readonly PropertyInfo s_inspectorModeInfo = typeof(Editor).GetProperty("inspectorMode", BindingFlags.NonPublic | BindingFlags.Instance);
         static readonly FieldInfo[] s_MonoEditorTypeInfos = s_MonoEditorTypeType.GetFields();
         static readonly Dictionary<string, MethodInfo> s_MethodInfos = new Dictionary<string, MethodInfo>();
 
@@ -322,6 +323,11 @@ namespace MomomaAssets
 
         class ExtendedEditor : Editor
         {
+            void OnEnable()
+            {
+                s_inspectorModeInfo.SetValue(this, InspectorMode.DebugInternal);
+            }
+
             public override void OnInspectorGUI()
             {
                 serializedObject.Update();
@@ -358,27 +364,26 @@ namespace MomomaAssets
                     if (isExpanded)
                     {
                         var copy = sp.Copy();
-                        if (sp.Next(true))
+                        if (!sp.Next(true))
+                            return false;
+                        if (copy.isArray)
                         {
-                            using (new EditorGUI.IndentLevelScope(1))
+                            while (sp.propertyType != SerializedPropertyType.ArraySize)
                             {
-                                if (copy.isArray)
-                                {
-                                    while (sp.propertyType != SerializedPropertyType.ArraySize)
-                                    {
-                                        sp.Next(true);
-                                    }
-                                }
-                                var endProperty = copy.GetEndProperty(true);
-                                while (!SerializedProperty.EqualContents(sp, endProperty))
-                                {
-                                    if (!PropertyFieldRecursive(sp))
-                                        return false;
-                                }
-                                return true;
+                                if (!sp.Next(true))
+                                    return false;
                             }
                         }
-                        return false;
+                        var endProperty = copy.GetEndProperty(true);
+                        using (new EditorGUI.IndentLevelScope(1))
+                        {
+                            while (!SerializedProperty.EqualContents(sp, endProperty))
+                            {
+                                if (!PropertyFieldRecursive(sp))
+                                    return false;
+                            }
+                            return true;
+                        }
                     }
                     else
                     {
