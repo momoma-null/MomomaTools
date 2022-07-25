@@ -12,12 +12,6 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [],
-    "versionDefines": [
-        {
-            "name": "com.vrchat.vrcsdk3",
-            "expression": "",
-            "define": "VRC_SDK_WORLD"
-        }
-    ],
+    "versionDefines": [],
     "noEngineReferences": false
 }
