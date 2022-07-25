@@ -72,7 +72,7 @@ namespace MomomaAssets
 
         readonly int previewHint = "Animixer Preview".GetHashCode();
 
-        [MenuItem("MomomaTools/Animator Controlle rMixer", false, 700)]
+        [MenuItem("MomomaTools/Animator Controller Mixer", false, 700)]
         static void ShowWindow()
         {
             GetWindow<AnimatorControllerMixer>(ObjectNames.NicifyVariableName(nameof(AnimatorControllerMixer)));
