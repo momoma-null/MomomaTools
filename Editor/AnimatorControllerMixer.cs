@@ -332,18 +332,30 @@ namespace MomomaAssets
         {
             switch (animLayerType)
             {
+#if VPM_AVATARS
+                case VRCAvatarDescriptor.AnimLayerType.Base: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Controllers/vrc_AvatarV3LocomotionLayer.controller");
+                case VRCAvatarDescriptor.AnimLayerType.Additive: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Controllers/vrc_AvatarV3IdleLayer.controller");
+                case VRCAvatarDescriptor.AnimLayerType.Gesture: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Controllers/vrc_AvatarV3HandsLayer.controller");
+                case VRCAvatarDescriptor.AnimLayerType.Action: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Controllers/vrc_AvatarV3ActionLayer.controller");
+                case VRCAvatarDescriptor.AnimLayerType.FX: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Controllers/vrc_AvatarV3FaceLayer.controller");
+#else
                 case VRCAvatarDescriptor.AnimLayerType.Base: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/VRCSDK/Examples3/Animation/Controllers/vrc_AvatarV3LocomotionLayer.controller");
                 case VRCAvatarDescriptor.AnimLayerType.Additive: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/VRCSDK/Examples3/Animation/Controllers/vrc_AvatarV3IdleLayer.controller");
                 case VRCAvatarDescriptor.AnimLayerType.Gesture: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/VRCSDK/Examples3/Animation/Controllers/vrc_AvatarV3HandsLayer.controller");
                 case VRCAvatarDescriptor.AnimLayerType.Action: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/VRCSDK/Examples3/Animation/Controllers/vrc_AvatarV3ActionLayer.controller");
                 case VRCAvatarDescriptor.AnimLayerType.FX: return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>("Assets/VRCSDK/Examples3/Animation/Controllers/vrc_AvatarV3FaceLayer.controller");
+#endif
                 default: throw new ArgumentOutOfRangeException(nameof(animLayerType));
             }
         }
 
         static AvatarMask GetDefaultHandsOnlyMask()
         {
+#if VPM_AVATARS
+            return AssetDatabase.LoadAssetAtPath<AvatarMask>("Packages/com.vrchat.avatars/Samples/AV3 Demo Assets/Animation/Masks/vrc_HandsOnly.mask");
+#else
             return AssetDatabase.LoadAssetAtPath<AvatarMask>("Assets/VRCSDK/Examples3/Animation/Masks/vrc_HandsOnly.mask");
+#endif
         }
 #endif
 
