@@ -12,6 +12,12 @@
     "precompiledReferences": [],
     "autoReferenced": false,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.vrchat.avatars",
+            "expression": "",
+            "define": "VPM_AVATARS"
+        }
+    ],
     "noEngineReferences": false
 }
