@@ -1,8 +1,8 @@
 ﻿using System;
-using System.Linq;
 using System.Collections.Generic;
-using UnityEngine;
+using System.Linq;
 using UnityEditor;
+using UnityEngine;
 
 namespace MomomaAssets
 {
@@ -26,7 +26,6 @@ namespace MomomaAssets
                         RemoveProperties(savedProp.FindPropertyRelative("m_Floats"), mat);
                         RemoveProperties(savedProp.FindPropertyRelative("m_Colors"), mat);
                     }
-#if !UNITY_2019_1_OR_NEWER
                     if (mat.shader != null)
                     {
                         HashSet<string> variants;
@@ -41,60 +40,29 @@ namespace MomomaAssets
                                 for (var i = 0; i < m_Snippets.arraySize; ++i)
                                 {
                                     var snippet = m_Snippets.GetArrayElementAtIndex(i).FindPropertyRelative("second");
-                                    using (var m_VariantsUser0 = snippet.FindPropertyRelative("m_VariantsUser0"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser0.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser0.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
-                                    using (var m_VariantsUser1 = snippet.FindPropertyRelative("m_VariantsUser1"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser1.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser1.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
-                                    using (var m_VariantsUser2 = snippet.FindPropertyRelative("m_VariantsUser2"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser2.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser2.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
-                                    using (var m_VariantsUser3 = snippet.FindPropertyRelative("m_VariantsUser3"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser3.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser3.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
-                                    using (var m_VariantsUser4 = snippet.FindPropertyRelative("m_VariantsUser4"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser4.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser4.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
-                                    using (var m_VariantsUser5 = snippet.FindPropertyRelative("m_VariantsUser5"))
-                                    {
-                                        for (var j = 0; j < m_VariantsUser5.arraySize; ++j)
-                                        {
-                                            var tempArray = m_VariantsUser5.GetArrayElementAtIndex(j);
-                                            for (var k = 0; k < tempArray.arraySize; ++k)
-                                                variants.Add(tempArray.GetArrayElementAtIndex(k).stringValue);
-                                        }
-                                    }
+#if UNITY_2019_1_OR_NEWER
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal0", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal1", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal2", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal3", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal4", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal5", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserGlobal6", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal0", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal1", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal2", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal3", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal4", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal5", variants);
+                                    CollectKeywords(snippet, "m_VariantsUserLocal6", variants);
+#else
+                                    CollectKeywords(snippet, "m_VariantsUser0", variants);
+                                    CollectKeywords(snippet, "m_VariantsUser1", variants);
+                                    CollectKeywords(snippet, "m_VariantsUser2", variants);
+                                    CollectKeywords(snippet, "m_VariantsUser3", variants);
+                                    CollectKeywords(snippet, "m_VariantsUser4", variants);
+                                    CollectKeywords(snippet, "m_VariantsUser5", variants);
+#endif
                                 }
                             }
                         }
@@ -105,7 +73,6 @@ namespace MomomaAssets
                             m_ShaderKeywords.stringValue = string.Join(" ", keywords);
                         }
                     }
-#endif
                     if (so.ApplyModifiedProperties())
                     {
                         Debug.Log("modify " + mat.name, mat);
@@ -121,6 +88,19 @@ namespace MomomaAssets
                 var name = props.GetArrayElementAtIndex(i).FindPropertyRelative("first").stringValue;
                 if (!mat.HasProperty(name))
                     props.DeleteArrayElementAtIndex(i);
+            }
+        }
+
+        static void CollectKeywords(SerializedProperty snippet, string propertyName, HashSet<string> variants)
+        {
+            using (var variantsProperty = snippet.FindPropertyRelative(propertyName))
+            {
+                for (var i = 0; i < variantsProperty.arraySize; ++i)
+                {
+                    var tempArray = variantsProperty.GetArrayElementAtIndex(i);
+                    for (var j = 0; j < tempArray.arraySize; ++j)
+                        variants.Add(tempArray.GetArrayElementAtIndex(j).stringValue);
+                }
             }
         }
     }
