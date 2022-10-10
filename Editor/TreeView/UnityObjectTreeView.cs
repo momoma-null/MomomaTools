@@ -183,11 +183,9 @@ namespace MomomaAssets
             showBorder = true;
             rowHeight = EditorGUIUtility.singleLineHeight;
             multiColumnHeader.sortingChanged += OnSortingChanged;
-            multiColumnHeader.visibleColumnsChanged += OnVisibleColumnChanged;
             this.GetItems = GetItems;
             this.ModifiedItem = ModifiedItem;
             this.canUndo = canUndo;
-            m_Items = null;
             Reload();
         }
 
@@ -195,31 +193,22 @@ namespace MomomaAssets
         readonly Action<T> ModifiedItem;
         readonly bool canUndo;
 
-        List<TreeViewItem> m_Items;
-
         public override void OnHierarchyChange()
         {
-            m_Items = null;
             Reload();
         }
 
         protected override TreeViewItem BuildRoot()
         {
-            return new TreeViewItem(-1, -1, null);
+            var root = new TreeViewItem(-1, -1, null);
+            root.children = GetItems().ToList();
+            return root;
         }
 
         protected override IList<TreeViewItem> BuildRows(TreeViewItem root)
         {
-            if (m_Items == null)
-            {
-                m_Items = new List<TreeViewItem>();
-                if (GetItems == null)
-                    return m_Items;
-                m_Items.AddRange(GetItems());
-            }
-            var rows = hasSearch ? m_Items.FindAll(item => DoesItemMatchSearch(item, searchString)) : new List<TreeViewItem>(m_Items);
+            var rows = hasSearch ? root.children.FindAll(item => DoesItemMatchSearch(item, searchString)) : root.children.ToList();
             Sort(rows);
-            Repaint();
             return rows;
         }
 
@@ -279,19 +268,14 @@ namespace MomomaAssets
             Selection.instanceIDs = selectedIDs.ToArray();
         }
 
-        protected override void SearchChanged(string newSearch)
-        {
-            Reload();
-        }
-
-        void OnVisibleColumnChanged(MultiColumnHeader header)
-        {
-            Reload();
-        }
-
         void OnSortingChanged(MultiColumnHeader header)
         {
-            Reload();
+            var rows = GetRows();
+            var sortedRows = BuildRows(rootItem);
+            for(var i = 0; i < rows.Count; ++i)
+            {
+                rows[i] = sortedRows[i];
+            }
         }
 
         void Sort(List<TreeViewItem> rows)
