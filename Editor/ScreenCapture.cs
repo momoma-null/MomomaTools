@@ -30,6 +30,7 @@ namespace MomomaAssets
             if (targetTextureIsNull)
             {
                 targetTexture = RenderTexture.GetTemporary(camera.pixelWidth, camera.pixelHeight, 24, GraphicsFormat.R32G32B32A32_SFloat);
+                targetTexture.antiAliasing = 2;
                 camera.targetTexture = targetTexture;
             }
             try
