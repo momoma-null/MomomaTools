@@ -69,7 +69,7 @@ namespace MomomaAssets
                                         using (new EditorGUILayout.HorizontalScope())
                                         {
                                             prop.serializedObject.Update();
-                                            EditorGUILayout.PropertyField(prop);
+                                            EditorGUILayout.PropertyField(prop, true);
                                             using (var srcSP = srcSO.FindProperty(prop.propertyPath))
                                             {
                                                 var label = SerializedProperty.DataEquals(prop, srcSP) ? Styles.revertEqual : Styles.revert;
