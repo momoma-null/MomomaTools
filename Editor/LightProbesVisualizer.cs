@@ -30,6 +30,7 @@ namespace MomomaAssets
             if (enabled)
                 SceneView.duringSceneGui += OnSceneGUI;
         }
+
         static void Initialize()
         {
             var temp = ObjectFactory.CreatePrimitive(PrimitiveType.Sphere);
@@ -37,9 +38,12 @@ namespace MomomaAssets
             UnityEngine.Object.DestroyImmediate(temp);
             diffuseMaterial = new Material(Shader.Find("Hidden/MS_LightProbes")) { hideFlags = HideFlags.HideAndDontSave, enableInstancing = true };
             materialPropertyBlock = new MaterialPropertyBlock();
-            LightProbes.tetrahedralizationCompleted += () => RecalculateMatrices();
+            Lightmapping.lightingDataUpdated += () => RecalculateMatrices();
             EditorSceneManager.activeSceneChangedInEditMode += (x, y) => RecalculateMatrices();
             RecalculateMatrices();
+            SceneView.duringSceneGui -= OnSceneGUI;
+            if (Menu.GetChecked(menuPath))
+                SceneView.duringSceneGui += OnSceneGUI;
         }
 
         static void OnSceneGUI(SceneView view)
@@ -50,8 +54,13 @@ namespace MomomaAssets
         static void RecalculateMatrices()
         {
             matrices.Clear();
-            matrices.AddRange(LightmapSettings.lightProbes.positions.Select(pos => Matrix4x4.TRS(pos, Quaternion.identity, 0.1f * Vector3.one)));
-            materialPropertyBlock.CopySHCoefficientArraysFrom(LightmapSettings.lightProbes.bakedProbes);
+            materialPropertyBlock.Clear();
+            var lightProbes = LightmapSettings.lightProbes;
+            if (lightProbes != null)
+            {
+                matrices.AddRange(lightProbes.positions.Select(pos => Matrix4x4.TRS(pos, Quaternion.identity, 0.1f * Vector3.one)));
+                materialPropertyBlock.CopySHCoefficientArraysFrom(lightProbes.bakedProbes);
+            }
         }
     }
 }
