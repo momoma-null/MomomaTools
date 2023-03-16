@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -149,8 +150,9 @@ namespace MomomaAssets
 
         IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems()
         {
-            var scene = SceneManager.GetActiveScene();
-            var dependencies = AssetDatabase.GetDependencies(scene.path, true);
+            var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
+            var srcPath = prefabStage?.prefabAssetPath ?? SceneManager.GetActiveScene().path;
+            var dependencies = AssetDatabase.GetDependencies(srcPath, true);
             var importers = dependencies.Select(path => (AssetDatabase.LoadAssetAtPath<Texture>(path), AssetImporter.GetAtPath(path) as TextureImporter)).Where(i => i.Item2 != null && IsEnabled(i.Item1));
             return importers.Select(i => new TextureTreeViewItem(i.Item1.GetInstanceID(), i.Item1, i.Item2)).ToArray();
         }
