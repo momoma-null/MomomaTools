@@ -246,14 +246,18 @@ namespace MomomaAssets
             var meshRendererList = GetMeshRenderers();
             foreach (var mr in meshRendererList)
             {
-                var mesh = mr.GetComponent<MeshFilter>()?.sharedMesh;
-                if (mesh != null && (!mr.isPartOfStaticBatch || batchedMeshes.Add(mesh)))
+                var filter = mr.GetComponent<MeshFilter>();
+                if (filter != null)
                 {
-                    for (var i = 0; i < mesh.subMeshCount; ++i)
+                    var mesh = filter.sharedMesh;
+                    if (mesh != null && (!mr.isPartOfStaticBatch || batchedMeshes.Add(mesh)))
                     {
-                        var subMesh = mesh.GetSubMesh(i);
-                        if (subMesh.topology == MeshTopology.Triangles)
-                            triangleNum += subMesh.indexCount / 3;
+                        for (var i = 0; i < mesh.subMeshCount; ++i)
+                        {
+                            var subMesh = mesh.GetSubMesh(i);
+                            if (subMesh.topology == MeshTopology.Triangles)
+                                triangleNum += subMesh.indexCount / 3;
+                        }
                     }
                 }
                 var materialArray = mr.sharedMaterials;
