@@ -1,7 +1,7 @@
 {
     "name": "MomomaAssets",
+    "rootNamespace": "MomomaAssets",
     "references": [],
-    "optionalUnityReferences": [],
     "includePlatforms": [
         "Editor",
         "WindowsStandalone32",
@@ -12,5 +12,7 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": []
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
 }
