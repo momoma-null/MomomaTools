@@ -1,9 +1,10 @@
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
-using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.IMGUI.Controls;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -35,7 +36,7 @@ namespace MomomaAssets
         [SerializeField]
         bool m_IncludeInactive;
         [SerializeField]
-        TreeViewState m_ViewState = new TreeViewState();
+        TreeViewState m_ViewState = new();
         [SerializeField]
         MultiColumnHeaderState[] multiColumnHeaderStates = new MultiColumnHeaderState[]
         {
@@ -146,16 +147,13 @@ namespace MomomaAssets
 
         UnityObjectTreeViewBase GetCurrentTreeView()
         {
-            switch (m_SelectedTabIndex)
+            return m_SelectedTabIndex switch
             {
-                case 1:
-                    return new UnityObjectTreeView<GameObjectTreeViewItem>(m_ViewState, multiColumnHeaderStates[0], () => GetTreeViewItems(isGameObject: true));
-                case 2:
-                    return new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[1], () => GetTreeViewItems());
-                case 3:
-                    return new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[2], () => GetTreeViewItems(isLightmapStatic: true));
-                default: throw new InvalidOperationException("tab number is invalid");
-            }
+                1 => new UnityObjectTreeView<GameObjectTreeViewItem>(m_ViewState, multiColumnHeaderStates[0], () => GetTreeViewItems(isGameObject: true)),
+                2 => new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[1], () => GetTreeViewItems()),
+                3 => new UnityObjectTreeView<MeshRendererTreeViewItem>(m_ViewState, multiColumnHeaderStates[2], () => GetTreeViewItems(isLightmapStatic: true)),
+                _ => throw new InvalidOperationException("tab number is invalid"),
+            };
         }
 
         static MultiColumnHeaderState GetStaticViewState()
@@ -369,7 +367,7 @@ namespace MomomaAssets
             {
                 if (src.intValue == m_StaticEditorFlags.intValue)
                     return false;
-                SetFlag((((StaticEditorFlags)src.intValue & flag) != 0), flag);
+                SetFlag(((StaticEditorFlags)src.intValue & flag) != 0, flag);
                 return true;
             }
 

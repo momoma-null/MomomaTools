@@ -8,12 +8,15 @@ namespace MomomaAssets
 {
     public class UnusedMaterialPropertiesRemover : Editor
     {
+#if !UNITY_2021_2_OR_NEWER
         static readonly Dictionary<Shader, HashSet<string>> s_ShaderVariants = new Dictionary<Shader, HashSet<string>>();
+#endif
 
         [MenuItem("MomomaTools/RemoveUnusedProperties")]
         static void Remove()
         {
             var allMaterialPaths = AssetDatabase.GetAllAssetPaths().Where(path => path.StartsWith("Assets/") && path.EndsWith(".mat"));
+            AssetDatabase.ForceReserializeAssets(allMaterialPaths);
             foreach (var path in allMaterialPaths)
             {
                 var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -28,6 +31,12 @@ namespace MomomaAssets
                     }
                     if (mat.shader != null)
                     {
+#if UNITY_2021_2_OR_NEWER
+                        using (var keywordsProp = so.FindProperty("m_InvalidKeywords"))
+                        {
+                            keywordsProp.arraySize = 0;
+                        }
+#else
                         HashSet<string> variants;
                         if (!s_ShaderVariants.TryGetValue(mat.shader, out variants))
                         {
@@ -72,6 +81,7 @@ namespace MomomaAssets
                             keywords = Array.FindAll(keywords, k => variants.Contains(k));
                             m_ShaderKeywords.stringValue = string.Join(" ", keywords);
                         }
+#endif
                     }
                     if (so.ApplyModifiedProperties())
                     {
@@ -91,6 +101,7 @@ namespace MomomaAssets
             }
         }
 
+#if !UNITY_2021_2_OR_NEWER
         static void CollectKeywords(SerializedProperty snippet, string propertyName, HashSet<string> variants)
         {
             using (var variantsProperty = snippet.FindPropertyRelative(propertyName))
@@ -103,5 +114,6 @@ namespace MomomaAssets
                 }
             }
         }
+#endif
     }
 }// namespace MomomaAssets

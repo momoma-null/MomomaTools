@@ -1,5 +1,5 @@
 ﻿using UnityEditor;
-using UnityEditor.Experimental.AssetImporters;
+using UnityEditor.AssetImporters;
 using UnityEditorInternal;
 using UnityEngine;
 
@@ -88,9 +88,9 @@ namespace MomomaAssets
             base.Apply();
         }
 
-        protected override void ResetValues()
+        public override void DiscardChanges()
         {
-            base.ResetValues();
+            base.DiscardChanges();
             SyncTempTexture();
         }
 

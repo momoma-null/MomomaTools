@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEditor;
-using UnityEditor.Experimental.AssetImporters;
+using UnityEditor.AssetImporters;
 using UnityEngine;
 
 namespace MomomaAssets

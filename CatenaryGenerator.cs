@@ -1,10 +1,11 @@
-﻿#if UNITY_EDITOR
+﻿
+#if UNITY_EDITOR
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using UnityEditor;
-using UnityEditor.Experimental.SceneManagement;
+using UnityEditor.SceneManagement;
+using UnityEngine;
 
 namespace MomomaAssets
 {
@@ -17,7 +18,7 @@ namespace MomomaAssets
         [SerializeField]
         float m_Catenary = 10f;
         [SerializeField]
-        Gradient m_Gradient = new Gradient();
+        Gradient m_Gradient = new();
         [SerializeField, HideInInspector]
         GameObject[] m_MeshObjects = new GameObject[0];
 
@@ -56,7 +57,7 @@ namespace MomomaAssets
             if (sourceMesh == null)
                 return;
             var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-            var assetPath = prefabStage != null && prefabStage.IsPartOfPrefabContents(this.gameObject) ? prefabStage.prefabAssetPath : null;
+            var assetPath = prefabStage != null && prefabStage.IsPartOfPrefabContents(this.gameObject) ? prefabStage.assetPath : null;
             using (var so = new SerializedObject(this))
             using (var sp = so.FindProperty(nameof(m_MeshObjects)))
             {
@@ -181,7 +182,7 @@ namespace MomomaAssets
                 var count = Mathf.RoundToInt(totalLength / m_UnitLength);
                 var length = totalLength / count;
                 var lScale = length / m_UnitLength;
-                Func<float, Vector3> catenaryFunc = (float x) => x * hDirection + m_Catenary * Cosh(x / m_Catenary) * Vector3.up;
+                Vector3 catenaryFunc(float x) => x * hDirection + m_Catenary * Cosh(x / m_Catenary) * Vector3.up;
                 var origin = m_FromPos - catenaryFunc(a);
                 var biHDirection = new Vector3(-hDirection.z, 0, hDirection.x);
                 for (var i = 0; i < count; ++i)

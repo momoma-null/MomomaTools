@@ -14,7 +14,7 @@ namespace MomomaAssets
             var currentPosition = Tools.handlePosition;
             var size = 0.15f * HandleUtility.GetHandleSize(currentPosition);
             EditorGUI.BeginChangeCheck();
-            var position = Handles.FreeMoveHandle(currentPosition, Tools.handleRotation, size, Vector3.zero, Handles.RectangleHandleCap);
+            var position = Handles.FreeMoveHandle(currentPosition, size, Vector3.zero, Handles.RectangleHandleCap);
             if (EditorGUI.EndChangeCheck())
             {
                 var delta = position - currentPosition;

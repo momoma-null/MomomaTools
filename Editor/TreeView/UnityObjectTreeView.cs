@@ -17,7 +17,7 @@ namespace MomomaAssets
 
     public sealed class ColumnArray<T> where T : UnityObjectTreeViewItem
     {
-        readonly List<Column> columns = new List<Column>();
+        readonly List<Column> columns = new();
         readonly static Func<SerializedProperty, T, bool> defaultCopyProperty = (from, to) => to.serializedObject.CopyFromSerializedPropertyIfDifferent(from);
 
         public void Add<TValue>(string name, float width, Func<T, TValue> getValue, Func<T, SerializedProperty> getProperty)
@@ -57,7 +57,7 @@ namespace MomomaAssets
             columns.Add(column);
         }
 
-        public MultiColumnHeaderState GetHeaderState() => new MultiColumnHeaderState(columns.ToArray());
+        public MultiColumnHeaderState GetHeaderState() => new(columns.ToArray());
     }
 
     public static class TreeViewItemExtensions
@@ -200,8 +200,10 @@ namespace MomomaAssets
 
         protected override TreeViewItem BuildRoot()
         {
-            var root = new TreeViewItem(-1, -1, null);
-            root.children = GetItems().ToList();
+            var root = new TreeViewItem(-1, -1, null)
+            {
+                children = GetItems().ToList()
+            };
             return root;
         }
 
@@ -240,7 +242,7 @@ namespace MomomaAssets
                         {
                             var sp = column.GetProperty(item);
                             var rows = FindRows(ids);
-                            foreach (T r in rows)
+                            foreach (T r in rows.Cast<T>())
                             {
                                 if (r.id == id)
                                     continue;

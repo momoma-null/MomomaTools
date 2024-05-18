@@ -1,10 +1,11 @@
-﻿using System;
+﻿
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
-using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.IMGUI.Controls;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityObject = UnityEngine.Object;
@@ -28,10 +29,10 @@ namespace MomomaAssets
         }
 
         static readonly Type s_TextureUtilType = Type.GetType("UnityEditor.TextureUtil, UnityEditor.dll");
-        static readonly Dictionary<string, MethodInfo> s_TextureUtilInfos = new Dictionary<string, MethodInfo>();
+        static readonly Dictionary<string, MethodInfo> s_TextureUtilInfos = new();
 
         [SerializeField]
-        TreeViewState m_ViewState = new TreeViewState();
+        TreeViewState m_ViewState = new();
         [SerializeField]
         MultiColumnHeaderState headerState = GetHeaderState();
 
@@ -46,8 +47,7 @@ namespace MomomaAssets
 
         static MethodInfo GetMethod(string methodName)
         {
-            MethodInfo info;
-            if (s_TextureUtilInfos.TryGetValue(methodName, out info))
+            if (s_TextureUtilInfos.TryGetValue(methodName, out var info))
                 return info;
             info = s_TextureUtilType.GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             s_TextureUtilInfos[methodName] = info;
@@ -108,8 +108,7 @@ namespace MomomaAssets
                 EditorGUILayout.Space();
                 using (new EditorGUILayout.VerticalScope())
                 {
-                    if (m_TreeView == null)
-                        m_TreeView = new UnityObjectTreeView<TextureTreeViewItem>(m_ViewState, headerState, GetTreeViewItems, item => item.ImportAsset(), false);
+                    m_TreeView ??= new UnityObjectTreeView<TextureTreeViewItem>(m_ViewState, headerState, GetTreeViewItems, item => item.ImportAsset(), false);
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         EditorGUI.BeginChangeCheck();
@@ -151,7 +150,7 @@ namespace MomomaAssets
         IEnumerable<UnityObjectTreeViewItem> GetTreeViewItems()
         {
             var prefabStage = PrefabStageUtility.GetCurrentPrefabStage();
-            var srcPath = prefabStage?.prefabAssetPath ?? SceneManager.GetActiveScene().path;
+            var srcPath = prefabStage?.assetPath ?? SceneManager.GetActiveScene().path;
             var dependencies = AssetDatabase.GetDependencies(srcPath, true);
             var importers = dependencies.Select(path => (AssetDatabase.LoadAssetAtPath<Texture>(path), AssetImporter.GetAtPath(path) as TextureImporter)).Where(i => i.Item2 != null && IsEnabled(i.Item1));
             return importers.Select(i => new TextureTreeViewItem(i.Item1.GetInstanceID(), i.Item1, i.Item2)).ToArray();
@@ -177,7 +176,7 @@ namespace MomomaAssets
 
             internal int width => (int)GetMethod("GetGPUWidth").Invoke(null, new object[] { targetTexture });
             internal int height => (int)GetMethod("GetGPUHeight").Invoke(null, new object[] { targetTexture });
-            internal MemorySize memorySize => new MemorySize((long)GetMethod("GetStorageMemorySizeLong").Invoke(null, new object[] { targetTexture }));
+            internal MemorySize memorySize => new((long)GetMethod("GetStorageMemorySizeLong").Invoke(null, new object[] { targetTexture }));
 
             internal TextureTreeViewItem(int id, Texture texture, TextureImporter obj) : base(id)
             {
@@ -205,7 +204,7 @@ namespace MomomaAssets
             }
         }
 
-        struct MemorySize : IComparable
+        readonly struct MemorySize : IComparable
         {
             readonly long value;
 
@@ -213,7 +212,7 @@ namespace MomomaAssets
 
             public int CompareTo(object other)
             {
-                if (other == null || !(other is MemorySize))
+                if (other is null or not MemorySize)
                     return 1;
                 return value.CompareTo(((MemorySize)other).value);
             }
