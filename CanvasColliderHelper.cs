@@ -31,6 +31,7 @@ namespace MomomaAssets
                 var newCollider = rootGO.AddComponent<BoxCollider>();
                 newCollider.size = rect.size;
                 newCollider.center = center;
+                newCollider.isTrigger = true;
             }
         }
     }
