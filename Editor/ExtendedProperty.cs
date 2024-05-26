@@ -1,13 +1,14 @@
-﻿using System.Collections.Generic;
+﻿
+using System.Collections.Generic;
 using System.Linq;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 
 namespace MomomaAssets
 {
-
-    class ExtendedProperty
+    static class ExtendedProperty
     {
+#if !UNITY_2022_1_OR_NEWER
         static Object s_Object;
         static Dictionary<string[], int> s_Enums = new Dictionary<string[], int>(new SequenceEqualityComparer<string>());
         static Vector2? s_Vector2;
@@ -17,6 +18,7 @@ namespace MomomaAssets
         static AnimationCurve s_AnimationCurve;
         static Bounds? s_Bounds;
         static Quaternion? s_Quaternion;
+#endif
 
         [InitializeOnLoadMethod]
         static void Initialize()
@@ -28,6 +30,7 @@ namespace MomomaAssets
         {
             property = property.Copy();
             menu.AddItem(new GUIContent("Copy Property Path"), false, () => EditorGUIUtility.systemCopyBuffer = property.propertyPath);
+#if !UNITY_2022_1_OR_NEWER
             menu.AddSeparator(null);
             switch (property.propertyType)
             {
@@ -162,8 +165,10 @@ namespace MomomaAssets
                     }
                     break;
             }
+#endif
         }
 
+#if !UNITY_2022_1_OR_NEWER
         class SequenceEqualityComparer<T> : IEqualityComparer<IEnumerable<T>>
         {
             public bool Equals(IEnumerable<T> x, IEnumerable<T> y)
@@ -176,6 +181,6 @@ namespace MomomaAssets
                 return obj?.Max(t => t.GetHashCode()) ?? 0;
             }
         }
+#endif
     }
-
 }// namespace MomomaAssets
