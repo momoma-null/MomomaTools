@@ -20,7 +20,7 @@ namespace MomomaAssets
                 {
                     i.Process();
                     Debug.Log($"{i.GetType().Name} process done.({i})");
-                    Object.Destroy(i as Component);
+                    Object.DestroyImmediate(i as Component);
                 }
             }
         }
