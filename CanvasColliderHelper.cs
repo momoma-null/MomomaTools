@@ -1,6 +1,6 @@
 
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace MomomaAssets
 {
@@ -18,15 +18,14 @@ namespace MomomaAssets
             }
             collider.enabled = false;
 
-            var selectables = rootCanvas.GetComponentsInChildren<Selectable>(true);
+            var eventSystemHandlers = rootCanvas.GetComponentsInChildren<IEventSystemHandler>(true);
             var rootTransform = rootCanvas.GetComponent<RectTransform>();
-            foreach(var selectable in selectables)
+            foreach (var eventSystemHandler in eventSystemHandlers)
             {
-                var graphic = selectable.targetGraphic;
-                if (graphic == null || !graphic.raycastTarget)
+                if ((eventSystemHandler as Component).transform is not RectTransform rectTransform)
                     continue;
-                var rect = graphic.rectTransform.rect;
-                var center = graphic.rectTransform.TransformPoint(rect.center);
+                var rect = rectTransform.rect;
+                var center = rectTransform.TransformPoint(rect.center);
                 center = rootTransform.InverseTransformPoint(center);
                 var newCollider = rootGO.AddComponent<BoxCollider>();
                 newCollider.size = rect.size;
