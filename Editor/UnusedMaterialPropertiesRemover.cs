@@ -1,12 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
+﻿
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
 namespace MomomaAssets
 {
-    public class UnusedMaterialPropertiesRemover : Editor
+    public sealed class UnusedMaterialPropertiesRemover : Editor
     {
 #if !UNITY_2021_2_OR_NEWER
         static readonly Dictionary<Shader, HashSet<string>> s_ShaderVariants = new Dictionary<Shader, HashSet<string>>();
@@ -28,6 +27,7 @@ namespace MomomaAssets
                         RemoveProperties(savedProp.FindPropertyRelative("m_TexEnvs"), mat);
                         RemoveProperties(savedProp.FindPropertyRelative("m_Floats"), mat);
                         RemoveProperties(savedProp.FindPropertyRelative("m_Colors"), mat);
+                        RemoveProperties(savedProp.FindPropertyRelative("m_Ints"), mat);
                     }
                     if (mat.shader != null)
                     {
