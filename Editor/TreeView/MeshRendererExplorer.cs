@@ -165,8 +165,10 @@ namespace MomomaAssets
             columns.Add("Occluder", 50, item => item.OccluderStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccluderStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OccluderStatic, from));
             columns.Add("Occludee", 50, item => item.OccludeeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.OccludeeStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OccludeeStatic, from));
             columns.Add("Batching", 50, item => item.BatchingStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.BatchingStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.BatchingStatic, from));
+#pragma warning disable CS0618
             columns.Add("Navigation", 50, item => item.NavigationStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.NavigationStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.NavigationStatic, from));
             columns.Add("OffMeshLink", 50, item => item.OffMeshLinkGeneration, (r, item) => item.DrawProperty(r, StaticEditorFlags.OffMeshLinkGeneration), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.OffMeshLinkGeneration, from));
+#pragma warning restore CS0618
             columns.Add("Reflection", 50, item => item.ReflectionProbeStatic, (r, item) => item.DrawProperty(r, StaticEditorFlags.ReflectionProbeStatic), item => item.m_StaticEditorFlags, (from, to) => to.CopyFrom(StaticEditorFlags.ReflectionProbeStatic, from));
             return columns.GetHeaderState();
         }
@@ -319,6 +321,7 @@ namespace MomomaAssets
                 get => HasFlag(StaticEditorFlags.BatchingStatic);
                 set => SetFlag(value, StaticEditorFlags.BatchingStatic);
             }
+#pragma warning disable CS0618
             internal bool NavigationStatic
             {
                 get => HasFlag(StaticEditorFlags.NavigationStatic);
@@ -329,6 +332,7 @@ namespace MomomaAssets
                 get => HasFlag(StaticEditorFlags.OffMeshLinkGeneration);
                 set => SetFlag(value, StaticEditorFlags.OffMeshLinkGeneration);
             }
+#pragma warning restore CS0618
             internal bool ReflectionProbeStatic
             {
                 get => HasFlag(StaticEditorFlags.ReflectionProbeStatic);
