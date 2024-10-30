@@ -4,6 +4,9 @@
     "version": "1.0.2",
     "unity": "2018.4",
     "description": "A set of useful editor extensions.",
+    "author": {
+      "name": "momoma"
+    },
     "repository": {
       "url": "https://github.com/momoma-null/MomomaTools.git",
       "type": "git"
