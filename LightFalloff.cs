@@ -12,6 +12,7 @@ namespace MomomaAssets
 
         void IPreprocessBehaviour.Process() { }
 
+#if UNITY_EDITOR
         static void UpdateFalloffType(FalloffType falloffType)
         {
             Lightmapping.ResetDelegate();
@@ -49,5 +50,6 @@ namespace MomomaAssets
         {
             UpdateFalloffType(FalloffType.Undefined);
         }
+#endif
     }
 }
