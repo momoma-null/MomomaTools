@@ -1,19 +1,18 @@
-﻿using System.Linq;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 
 namespace MomomaAssets
 {
-    sealed class ModelImporterCleaner
+    static class ModelImporterCleaner
     {
-        [MenuItem("MomomaTools/Cleanup Model Importer")]
-        static void Remove()
+        public static void Remove(IEnumerable<string> paths)
         {
-            var guids = AssetDatabase.FindAssets("t:Model", new[] { "Assets/" });
-            foreach (var guid in guids)
+            foreach (var path in paths)
             {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
                 var importer = AssetImporter.GetAtPath(path);
+                if (importer is not ModelImporter)
+                    continue;
                 using (var so = new SerializedObject(importer))
                 using (var m_ExternalObjects = so.FindProperty("m_ExternalObjects"))
                 using (var m_Materials = so.FindProperty("m_Materials"))

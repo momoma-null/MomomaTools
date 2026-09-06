@@ -5,18 +5,15 @@ using UnityEditor;
 
 namespace MomomaAssets
 {
-    sealed class PrefabCleaner
+    static class PrefabCleaner
     {
-        [MenuItem("MomomaTools/Cleanup Prefab")]
-        static void Remove()
+        public static void Remove(IEnumerable<string> paths)
         {
-            var guids = AssetDatabase.FindAssets("t:Prefab", new[] { "Assets/" });
             var prefabHash = new HashSet<GameObject>();
-            foreach (var guid in guids)
+            foreach (var path in paths)
             {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
                 var assets = AssetDatabase.LoadAllAssetsAtPath(path);
-                foreach (GameObject go in assets.Where(i => i is GameObject))
+                foreach (var go in assets.OfType<GameObject>())
                 {
                     var root = PrefabUtility.GetNearestPrefabInstanceRoot(go);
                     if (prefabHash.Add(root))
