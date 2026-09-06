@@ -141,6 +141,7 @@ namespace MomomaAssets
             columns.AddIntAsToggle("Mip Map", 50, item => item.m_EnableMipMap);
             columns.AddIntAsToggle("Preserve Coverage", 50, item => item.m_MipMapsPreserveCoverage, item => item.m_EnableMipMap.intValue == 1);
             columns.Add("Alpha Cutoff Value", 60, item => item.m_AlphaTestReferenceValue.floatValue, item => item.m_AlphaTestReferenceValue, item => item.m_EnableMipMap.intValue == 1 && item.m_MipMapsPreserveCoverage.intValue == 1);
+            columns.Add("Mipmap Bias", 60, item => item.m_MipBias.floatValue, item => item.m_MipBias, item => item.m_EnableMipMap.intValue == 1);
             columns.AddIntAsToggle("Readable", 50, item => item.m_IsReadable);
             columns.Add("Crunched Compression", 50, item => item.m_CrunchedCompression.boolValue, item => item.m_CrunchedCompression);
             columns.Add("Compression Quality", 60, item => item.m_CompressionQuality.intValue, item => item.m_CompressionQuality, item => item.m_CrunchedCompression.boolValue == true);
@@ -170,6 +171,7 @@ namespace MomomaAssets
             readonly internal SerializedProperty m_EnableMipMap;
             readonly internal SerializedProperty m_MipMapsPreserveCoverage;
             readonly internal SerializedProperty m_AlphaTestReferenceValue;
+            readonly internal SerializedProperty m_MipBias;
             readonly internal SerializedProperty m_IsReadable;
             readonly internal SerializedProperty m_CrunchedCompression;
             readonly internal SerializedProperty m_CompressionQuality;
@@ -193,6 +195,7 @@ namespace MomomaAssets
                 m_EnableMipMap = serializedObject.FindProperty("m_EnableMipMap");
                 m_MipMapsPreserveCoverage = serializedObject.FindProperty("m_MipMapsPreserveCoverage");
                 m_AlphaTestReferenceValue = serializedObject.FindProperty("m_AlphaTestReferenceValue");
+                m_MipBias = serializedObject.FindProperty("m_TextureSettings.m_MipBias");
                 m_IsReadable = serializedObject.FindProperty("m_IsReadable");
                 m_CrunchedCompression = serializedObject.FindProperty("m_PlatformSettings.Array.data[0].m_CrunchedCompression");
                 m_CompressionQuality = serializedObject.FindProperty("m_PlatformSettings.Array.data[0].m_CompressionQuality");
